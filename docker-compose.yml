@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: client-request-bot
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN}
+      TZ: Europe/Prague
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    container_name: clientbot-postgres
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: botpass
+      POSTGRES_DB: botdb
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+  adminer:
+    image: adminer:4
+    container_name: clientbot-adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+volumes:
+  db_data:
