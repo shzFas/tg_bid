@@ -8,13 +8,16 @@ from aiogram.fsm.context import FSMContext
 
 from .config import settings, CATEGORY_TO_CHANNEL
 from .states import RequestForm
-from .keyboards import nav_kb, categories_kb, phone_kb
+from .keyboards import nav_kb, categories_kb, phone_kb, confirm_kb, claim_kb
 from .texts import *
 from .utils import preview_text, now_local_str
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 router = Router()
+
+# Память активных заявок: ключ — message_id поста в канале
+active_requests: dict[int, dict] = {}
 
 # === START ===
 @router.message(CommandStart())
@@ -52,6 +55,7 @@ async def ask_name(m: Message, state: FSMContext):
 async def got_name(m: Message, state: FSMContext):
     await state.update_data(name=m.text.strip())
     await state.set_state(RequestForm.Category)
+    # показываем инлайн категории, убираем reply-клаву
     await m.answer(ASK_CATEGORY, reply_markup=categories_kb())
     await m.answer("Выберите категорию кнопкой ниже ⤵️", reply_markup=ReplyKeyboardRemove())
 
@@ -82,8 +86,7 @@ async def got_desc(m: Message, state: FSMContext):
     await state.update_data(description=m.text.strip())
     data = await state.get_data()
     await state.set_state(RequestForm.Confirm)
-    await m.answer(CONFIRM.format(preview=preview_text(data)), reply_markup=nav_kb())
-    await m.answer("Нажмите «✅ Отправить» или используйте «⬅️ Назад», чтобы что-то исправить.", reply_markup=nav_kb())
+    await m.answer(CONFIRM.format(preview=preview_text(data)), reply_markup=confirm_kb())
 
 # === NAVIGATION ===
 @router.callback_query(F.data == "nav:stop")
@@ -120,20 +123,26 @@ async def go_back(c: CallbackQuery, state: FSMContext):
         await c.message.answer("Назад сейчас недоступно.")
     await c.answer()
 
-# === CONFIRM & PUBLISH ===
-@router.message(RequestForm.Confirm)
-async def confirm_handler(m: Message, state: FSMContext):
+# === CONFIRM ===
+@router.callback_query(RequestForm.Confirm, F.data == "confirm:edit")
+async def confirm_edit(c: CallbackQuery, state: FSMContext):
+    await state.set_state(RequestForm.Description)
+    await c.message.edit_text(ASK_DESC, reply_markup=nav_kb())
+    await c.answer()
+
+@router.callback_query(RequestForm.Confirm, F.data == "confirm:send")
+async def confirm_send(c: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     required = ["phone", "name", "category", "city", "description"]
     if not all(data.get(k) for k in required):
-        await m.answer("Не хватает данных. Используйте «⬅️ Назад» и заполните всё.")
+        await c.answer("Не хватает данных", show_alert=True)
         return
 
     created_at = now_local_str()
     category = data["category"]
     channel_id = CATEGORY_TO_CHANNEL.get(category)
     if not channel_id:
-        await m.answer("Не настроен канал для этой категории.")
+        await c.answer("Канал для категории не настроен", show_alert=True)
         return
 
     text_channel = PUBLISHED_TEMPLATE.format(
@@ -153,14 +162,74 @@ async def confirm_handler(m: Message, state: FSMContext):
     )
 
     try:
-        await m.bot.send_message(chat_id=channel_id, text=text_channel)
-        await m.bot.send_message(chat_id=settings.OPERATOR_CHAT_ID, text=text_admin)
+        # публикуем в канал с кнопкой "Принять"
+        msg = await c.bot.send_message(chat_id=channel_id, text=text_channel, reply_markup=claim_kb())
+        # сохраняем активную заявку в памяти
+        active_requests[msg.message_id] = {
+            "category": category,
+            "user_id": None,
+            "username": None,
+            "full_text": text_admin,
+            "channel_id": channel_id,
+        }
+        # админу отправляем полную копию на всякий
+        await c.bot.send_message(chat_id=settings.OPERATOR_CHAT_ID, text=text_admin)
     except Exception as e:
-        await m.answer(f"Не получилось опубликовать: {e}")
+        await c.message.answer(f"Не получилось опубликовать: {e}")
+        await c.answer()
         return
 
     await state.clear()
-    await m.answer(THANKS)
+    try:
+        await c.message.edit_text(THANKS)
+    except:
+        await c.message.answer(THANKS)
+    await c.answer("Отправлено ✔")
+
+# === SPECIALISTS: claim ===
+@router.callback_query(F.data == "req:claim")
+async def claim_request(c: CallbackQuery):
+    msg_id = c.message.message_id
+    req = active_requests.get(msg_id)
+    if not req:
+        await c.answer("Заявка не найдена или устарела.", show_alert=True)
+        return
+
+    user = c.from_user
+    uname = user.username or user.full_name or str(user.id)
+
+    # уже занят
+    if req["user_id"]:
+        if req["user_id"] == user.id:
+            await c.answer("Вы уже приняли эту заявку.")
+        else:
+            await c.answer(f"Эта заявка уже принята @{req['username']}.", show_alert=True)
+        return
+
+    # фиксируем
+    req["user_id"] = user.id
+    req["username"] = uname
+
+    # редактируем пост в канале: пометим, что принято
+    new_text = (
+        f"✅ Заявка принята в работу\n\n"
+        f"{c.message.text}\n\n"
+        f"👨‍💼 Принял: @{uname}"
+    )
+    try:
+        await c.message.edit_text(new_text)
+    except Exception:
+        # если редактировать нельзя — просто отвечаем
+        pass
+
+    # отправляем полную заявку в ЛС специалисту
+    try:
+        await c.bot.send_message(chat_id=user.id, text=req["full_text"])
+    except Exception:
+        await c.answer("Не удалось отправить вам в ЛС (нажмите Start у бота).", show_alert=True)
+        return
+
+    await c.answer("Вы приняли заявку в работу ✅")
 
 # === BOOT ===
 async def main():
@@ -172,6 +241,10 @@ async def main():
 
     me = await bot.get_me()
     logging.info(f"Bot started as @{me.username} ({me.id})")
+    logging.info(
+        f"Channels: acct={settings.CHANNEL_ACCOUNTING_ID}, law={settings.CHANNEL_LAW_ID}, egov={settings.CHANNEL_EGOV_ID}; "
+        f"operator={settings.OPERATOR_CHAT_ID}"
+    )
 
     dp = Dispatcher()
     dp.include_router(router)
