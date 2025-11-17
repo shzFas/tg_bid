@@ -1,26 +1,37 @@
 version: "3.9"
 
 services:
-  redis:
-    image: redis:7-alpine
+  db:
+    image: postgres:16
+    container_name: tg_bid-postgres
+    environment:
+      POSTGRES_DB: tg_bid
+      POSTGRES_USER: tg_bid_user
+      POSTGRES_PASSWORD: tg_bid_password
+      TZ: ${TZ:-Europe/Prague}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
     restart: unless-stopped
 
   bot:
     build: ./bot
     env_file: ./bot/.env
     environment:
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       TZ: ${TZ:-Europe/Prague}
     depends_on:
-      - redis
+      - db
     restart: unless-stopped
 
   dm_bot:
     build: ./dm_bot
     env_file: ./dm_bot/.env
     environment:
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       TZ: ${TZ:-Europe/Prague}
     depends_on:
-      - redis
+      - db
     restart: unless-stopped
+
+volumes:
+  pg_data:
