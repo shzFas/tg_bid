@@ -137,7 +137,7 @@ async def my_tasks(m: Message):
             f"{MY_ITEM_BULLET} <b>#{msg_id}</b>\n"
             f"👤 Имя: {payload.get('name')}\n"
             f"📞 Телефон: {payload.get('phone')}\n"
-            f"📞 Whatsapp: wa.me/{payload.get('phone')}"
+            f"📞 Whatsapp: wa.me/{payload.get('phone')}\n"
             f"⚖️ Категория: {payload.get('category_h')}\n"
             f"🏙️ Город: {payload.get('city')}\n"
             f"📝 {payload.get('description')}\n"
