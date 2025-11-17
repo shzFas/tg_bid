@@ -3,14 +3,16 @@ from pathlib import Path
 
 class Settings(BaseSettings):
     BOT_TOKEN: str
+
     CHANNEL_ACCOUNTING_ID: int
     CHANNEL_LAW_ID: int
     CHANNEL_EGOV_ID: int
     OPERATOR_CHAT_ID: int
 
-    BOT2_USERNAME: str
-    SHARED_SECRET: str
-    REDIS_URL: str
+    BOT2_USERNAME: str | None = None
+    SHARED_SECRET: str | None = None
+
+    DATABASE_URL: str
     TZ: str | None = None
 
     model_config = SettingsConfigDict(
