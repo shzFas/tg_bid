@@ -3,7 +3,6 @@ import logging
 import hmac
 import hashlib
 
-import redis.asyncio as redis
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart
@@ -18,13 +17,14 @@ from .keyboards import (
 )
 from .texts import *
 from .utils import preview_text, now_local_str
+from .db import init_db, save_request, get_request_by_message_id, set_request_claimed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 router = Router()
-r: redis.Redis | None = None
 
-active_requests = {}   # минимальный кэш (msg_id -> {user_id, ...})
+# мини-кэш в памяти (msg_id -> {user_id, username})
+active_requests: dict[int, dict] = {}
 
 
 # ----------------------------------------------------
@@ -36,6 +36,9 @@ def make_short_token(message_id: int) -> str:
     Создаёт короткий токен вида:
     <hex_msg_id>.<first16-HMAC>
     """
+    if not settings.SHARED_SECRET:
+        raise RuntimeError("SHARED_SECRET is not set in .env for bot #1")
+
     mid_hex = format(message_id, "x")
     sig = hmac.new(
         settings.SHARED_SECRET.encode(),
@@ -72,6 +75,7 @@ async def got_contact(m: Message, state: FSMContext):
     await state.update_data(phone=phone)
     await ask_name(m, state)
 
+
 @router.message(RequestForm.Phone, F.text)
 async def phone_text(m: Message, state: FSMContext):
     txt = m.text.strip()
@@ -81,6 +85,7 @@ async def phone_text(m: Message, state: FSMContext):
 
     await state.update_data(phone=txt)
     await ask_name(m, state)
+
 
 async def ask_name(m: Message, state: FSMContext):
     await state.set_state(RequestForm.Name)
@@ -157,11 +162,13 @@ async def nav_stop(c: CallbackQuery, state: FSMContext):
     await c.message.answer(STOPPED)
     await c.answer()
 
+
 @router.callback_query(F.data == "nav:cancel")
 async def nav_cancel(c: CallbackQuery, state: FSMContext):
     await state.clear()
     await c.message.answer(CANCELED)
     await c.answer()
+
 
 @router.callback_query(F.data == "nav:back")
 async def nav_back(c: CallbackQuery, state: FSMContext):
@@ -244,25 +251,22 @@ async def confirm_send(c: CallbackQuery, state: FSMContext):
             reply_markup=claim_kb()
         )
 
+        # сохраняем в БД (PostgreSQL)
+        await save_request(
+            message_id=msg.message_id,
+            category=category,
+            name=data["name"],
+            phone=data["phone"],
+            city=data["city"],
+            description=data["description"],
+        )
+
         # кэш в памяти
         active_requests[msg.message_id] = {
             "category": category,
             "user_id": None,
             "username": None,
         }
-
-        # payload → Redis
-        payload = {
-            "name": data["name"],
-            "phone": data["phone"],
-            "city": data["city"],
-            "category_h": CATEGORY_H[category],
-            "description": data["description"],
-            "created_at": created_at,
-        }
-
-        await r.hset(f"claim:{msg.message_id}", mapping=payload)
-        await r.expire(f"claim:{msg.message_id}", 86400)   # сутки
 
         # копия админу
         await c.bot.send_message(settings.OPERATOR_CHAT_ID, text_admin)
@@ -284,11 +288,23 @@ async def confirm_send(c: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "req:claim")
 async def claim_request(c: CallbackQuery):
     msg_id = c.message.message_id
+
+    # Пытаемся взять из кэша
     req = active_requests.get(msg_id)
 
+    # Если в кэше нет — пробуем достать из БД
     if not req:
-        await c.answer("Заявка не найдена или устарела.", show_alert=True)
-        return
+        db_req = await get_request_by_message_id(msg_id)
+        if not db_req:
+            await c.answer("Заявка не найдена или устарела.", show_alert=True)
+            return
+
+        req = {
+            "category": db_req["category"],
+            "user_id": db_req.get("claimer_user_id"),
+            "username": db_req.get("claimer_username"),
+        }
+        active_requests[msg_id] = req
 
     user = c.from_user
     uname = user.username or user.full_name or str(user.id)
@@ -301,12 +317,16 @@ async def claim_request(c: CallbackQuery):
             await c.answer(f"Заявку уже взял @{req['username']}.", show_alert=True)
         return
 
-    # устанавливаем владельца заявки
+    # устанавливаем владельца заявки (в кэше)
     req["user_id"] = user.id
     req["username"] = uname
 
-    # сохраняем в Redis владельца заявки
-    await r.set(f"claim:{msg_id}:cid", user.id, ex=86400)
+    # сохраняем в БД владельца заявки
+    await set_request_claimed(
+        message_id=msg_id,
+        claimer_user_id=user.id,
+        claimer_username=uname,
+    )
 
     # редактируем сообщение в канале
     new_text = (
@@ -316,7 +336,7 @@ async def claim_request(c: CallbackQuery):
     )
     try:
         await c.message.edit_text(new_text)
-    except:
+    except Exception:
         pass
 
     # генерируем короткий токен для dm_bot
@@ -334,8 +354,8 @@ async def claim_request(c: CallbackQuery):
 # ----------------------------------------------------
 
 async def main():
-    global r
-    r = redis.from_url(settings.REDIS_URL, decode_responses=True)
+    # Инициализируем БД (создаём таблицы, если их нет)
+    await init_db()
 
     bot = Bot(
         token=settings.BOT_TOKEN,
