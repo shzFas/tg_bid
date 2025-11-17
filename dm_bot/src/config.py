@@ -4,7 +4,7 @@ from pathlib import Path
 class Settings(BaseSettings):
     BOT2_TOKEN: str
     SHARED_SECRET: str
-    REDIS_URL: str
+    DATABASE_URL: str
     TZ: str | None = None
 
     model_config = SettingsConfigDict(

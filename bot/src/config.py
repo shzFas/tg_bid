@@ -20,7 +20,6 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-
 settings = Settings()
 
 CATEGORY_TO_CHANNEL = {
