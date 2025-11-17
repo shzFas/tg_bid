@@ -1,15 +1,26 @@
 version: "3.9"
 
 services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
   bot:
     build: ./bot
-    env_file: .env 
+    env_file: ./bot/.env
     environment:
-      BOT_TOKEN: ${BOT_TOKEN}
-      CHANNEL_ACCOUNTING_ID: ${CHANNEL_ACCOUNTING_ID}
-      CHANNEL_LAW_ID: ${CHANNEL_LAW_ID}
-      CHANNEL_EGOV_ID: ${CHANNEL_EGOV_ID}
-      OPERATOR_CHAT_ID: ${OPERATOR_CHAT_ID}
-      TZ: ${TZ}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TZ: ${TZ:-Europe/Prague}
+    depends_on:
+      - redis
     restart: unless-stopped
-    
+
+  dm_bot:
+    build: ./dm_bot
+    env_file: ./dm_bot/.env
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      TZ: ${TZ:-Europe/Prague}
+    depends_on:
+      - redis
+    restart: unless-stopped
