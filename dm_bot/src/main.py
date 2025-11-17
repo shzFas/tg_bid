@@ -34,13 +34,11 @@ async def add_to_user_index(user_id: int, msg_id: int) -> None:
 
 async def ensure_user_index_built(user_id: int) -> int:
     set_key = f"user:{user_id}:claims"
-    if await r.scard(set_key) > 0:
-        return 0
 
-    # мягкое сканирование Redis (без KEYS *)
     added = 0
     cursor: int = 0
     pattern = "claim:*:cid"
+
     while True:
         cursor, keys = await r.scan(cursor=cursor, match=pattern, count=500)
         if not keys:
@@ -48,7 +46,6 @@ async def ensure_user_index_built(user_id: int) -> int:
                 break
             continue
 
-        # получаем все cid пачкой
         values = await r.mget(keys)
         for k, v in zip(keys, values):
             if v is None:
@@ -66,6 +63,7 @@ async def ensure_user_index_built(user_id: int) -> int:
             break
 
     return added
+
 
 async def get_user_claims(user_id: int, limit: int = 20) -> List[Tuple[int, Dict[str, str]]]:
     set_key = f"user:{user_id}:claims"
@@ -125,6 +123,9 @@ async def start(m: Message):
 
 @router.message(Command(commands={"my", "tasks"}))
 async def my_tasks(m: Message):
+    # сначала актуализируем индекс
+    await ensure_user_index_built(m.from_user.id)
+
     claims = await get_user_claims(m.from_user.id, limit=30)
     if not claims:
         await m.answer(MY_EMPTY + "\n\n" + HELP)
@@ -133,15 +134,15 @@ async def my_tasks(m: Message):
     lines = [MY_HEADER]
     for msg_id, payload in claims:
         lines.append(
-            f"{MY_ITEM_BULLET} <b>#{msg_id}</b> | "
+            f"{MY_ITEM_BULLET} <b>#{msg_id}</b>\n"
             f"👤 Имя: {payload.get('name')}\n"
             f"📞 Телефон: {payload.get('phone')}\n"
             f"⚖️ Категория: {payload.get('category_h')}\n"
             f"🏙️ Город: {payload.get('city')}\n"
             f"📝 {payload.get('description')}\n"
-            f"🕒 {payload.get('created_at')}"
+            f"🕒 {payload.get('created_at')}\n"
+            f"-------------------------"
         )
-    lines.append("\nОтправьте /start по кнопке в канале у нужной заявки, чтобы получить её детали ещё раз.")
 
     await m.answer("\n".join(lines))
 
