@@ -5,10 +5,10 @@ services:
     image: postgres:16
     container_name: tg_bid-postgres
     environment:
-      POSTGRES_DB: tg_bid
-      POSTGRES_USER: tg_bid_user
-      POSTGRES_PASSWORD: tg_bid_password
-      TZ: ${TZ:-Europe/Prague}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TZ}
     ports:
       - "5432:5432"
     volumes:
@@ -20,19 +20,19 @@ services:
     container_name: tg_bid-pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
+      GUNICORN_ACCESS_LOGFILE: "/dev/null"
     ports:
       - "5050:80"
     depends_on:
       - db
 
-
   bot:
     build: ./bot
     env_file: ./bot/.env
     environment:
-      TZ: ${TZ:-Europe/Prague}
+      TZ: ${TZ}
     depends_on:
       - db
     restart: unless-stopped
@@ -41,7 +41,7 @@ services:
     build: ./dm_bot
     env_file: ./dm_bot/.env
     environment:
-      TZ: ${TZ:-Europe/Prague}
+      TZ: ${TZ}
     depends_on:
       - db
     restart: unless-stopped
