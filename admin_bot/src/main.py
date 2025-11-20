@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import html
 from aiogram import Bot, Dispatcher, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command, CommandObject
@@ -30,26 +31,29 @@ HELP_TEXT = (
     "<code>/export</code>\n"
 )
 
+
 @router.message(Command("start"))
 async def start(m: Message):
     if not is_admin(m.from_user.id):
         return
-    await m.answer(HELP_TEXT)
+    await m.answer(HELP_TEXT, parse_mode="HTML")
+
 
 @router.message(Command("help"))
 async def help_cmd(m: Message):
     if not is_admin(m.from_user.id):
         return
-    await m.answer(HELP_TEXT)
+    await m.answer(HELP_TEXT, parse_mode="HTML")
 
+
+# -------------------- /add_spec --------------------
 
 @router.message(Command("add_spec"))
 async def add_spec(m: Message, command: CommandObject):
     if not is_admin(m.from_user.id):
         return
     if not command.args:
-        await m.answer("<code>Использование: /add_spec tg_id username</code>")
-        return
+        return await m.answer("<code>Использование: /add_spec tg_id username</code>")
 
     parts = command.args.split(maxsplit=1)
     try:
@@ -58,9 +62,14 @@ async def add_spec(m: Message, command: CommandObject):
         return await m.answer("<code>tg_id должен быть числом</code>")
 
     username = parts[1].lstrip("@") if len(parts) == 2 else None
-    spec = await add_specialist(tg_id, username)
-    await m.answer(f"<b>OK:</b>\n<code>{spec}</code>")
 
+    spec = await add_specialist(tg_id, username)
+    safe_spec = html.escape(str(spec))  # защита от HTML-разрушения
+
+    await m.answer(f"<b>OK:</b>\n<code>{safe_spec}</code>", parse_mode="HTML")
+
+
+# -------------------- /set_cats --------------------
 
 @router.message(Command("set_cats"))
 async def set_cats(m: Message, command: CommandObject):
@@ -87,8 +96,10 @@ async def set_cats(m: Message, command: CommandObject):
         return await m.answer(f"<code>Допустимые категории: {allowed}</code>")
 
     await set_specialist_categories(tg_id, cats)
-    await m.answer("<b>Категории обновлены.</b>")
+    await m.answer("<b>Категории обновлены.</b>", parse_mode="HTML")
 
+
+# -------------------- /list_specs --------------------
 
 @router.message(Command("list_specs"))
 async def list_specs(m: Message):
@@ -101,23 +112,25 @@ async def list_specs(m: Message):
 
     lines = []
     for s in specs:
+        username = html.escape(s.get("username") or "-")   # защита
         categories = ", ".join(s['categories'] or [])
         lines.append(
-            f"ID={s['id']} tg={s['tg_user_id']} @{s.get('username')}\n"
-            f"cats: {categories}\n"
-            f"------------------------"
+            f"<code>ID={s['id']} TG={s['tg_user_id']} USER=@{username}\n"
+            f"CATS: {categories}\n"
+            "------------------------</code>"
         )
 
-    await m.answer("<code>" + "\n".join(lines) + "</code>")
+    await m.answer("\n".join(lines), parse_mode="HTML")
 
 
+# -------------------- START BOT --------------------
 
 async def main():
     await init_db()
 
     bot = Bot(
         token=settings.ADMIN_BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode="HTML"),  # можно оставить
+        default=DefaultBotProperties(parse_mode="HTML"),
     )
     dp = Dispatcher()
     dp.include_router(router)
