@@ -72,7 +72,7 @@ async def init_db() -> None:
 # FUNCTIONS: specialists
 # -----------------------
 
-async def get_or_create_specialist(
+async def add_specialist(
     tg_user_id: int,
     username: str | None = None,
     full_name: str | None = None,
