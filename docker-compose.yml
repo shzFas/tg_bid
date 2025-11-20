@@ -46,5 +46,14 @@ services:
       - db
     restart: unless-stopped
 
+  admin_bot:
+    build: ./admin_bot
+    env_file: ./admin_bot/.env
+    environment:
+      TZ: ${TZ}
+    depends_on:
+      - db
+    restart: unless-stopped
+
 volumes:
   pg_data:
