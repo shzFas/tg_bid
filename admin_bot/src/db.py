@@ -155,5 +155,32 @@ async def is_specialist_allowed(tg_user_id: int, category: str) -> bool:
             category,
         )
         return bool(row)
+    
+async def get_specialist_with_categories(tg_user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Вернёт специалиста + список его категорий.
+    {
+      id, tg_user_id, username, is_active, categories: ["ACCOUNTING", "LAW"]
+    }
+    """
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        spec = await conn.fetchrow(
+            "SELECT id, tg_user_id, username, full_name, is_active FROM specialists WHERE tg_user_id = $1;",
+            tg_user_id,
+        )
+        if not spec:
+            return None
+
+        spec_id = spec["id"]
+        rows = await conn.fetch(
+            "SELECT category FROM specialist_categories WHERE specialist_id = $1;",
+            spec_id,
+        )
+        cats = [r["category"] for r in rows]
+
+        d = dict(spec)
+        d["categories"] = cats
+        return d
 
 
