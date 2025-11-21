@@ -127,7 +127,7 @@ async def get_specialists_list() -> List[Dict[str, Any]]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT s.id, s.tg_user_id, s.username, s.is_active,
+            SELECT s.id, s.tg_user_id, s.username, s.is_active, s.full_name,
                    array_agg(sc.category) AS categories
             FROM specialists s
             LEFT JOIN specialist_categories sc ON sc.specialist_id = s.id

@@ -1,11 +1,12 @@
 import asyncio
 import logging
 import html
+import math
 
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command, CommandObject, CommandStart
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.exceptions import TelegramForbiddenError
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -23,6 +24,8 @@ from .keyboards import categories_kb
 
 logging.basicConfig(level=logging.INFO)
 router = Router()
+
+PAGE_SIZE = 5 
 
 
 def is_admin(uid: int) -> bool:
@@ -373,23 +376,100 @@ async def list_specs(m: Message):
     if not is_admin(m.from_user.id):
         return
 
+    specs = await get_specialists_list()  # пусть вернёт всех, мы режем по 5
+    if not specs:
+        return await m.answer("Пока нет зарегистрированных специалистов.", parse_mode="HTML")
+
+    text, kb = build_specs_page(specs, page=1)
+    await m.answer(text, reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("spec_list:"))
+async def specs_pagination(c: CallbackQuery):
+    if not is_admin(c.from_user.id):
+        await c.answer("Нет доступа", show_alert=True)
+        return
+
+    try:
+        _, page_str = c.data.split(":", 1)
+        page = int(page_str)
+    except Exception:
+        await c.answer()
+        return
+
     specs = await get_specialists_list()
     if not specs:
-        return await m.answer("<code>Пока нет специалистов</code>", parse_mode="HTML")
+        await c.message.edit_text("Пока нет зарегистрированных специалистов.", parse_mode="HTML")
+        await c.answer()
+        return
 
-    lines = []
-    for s in specs:
-        username = html.escape(s.get("username") or "-")
-        categories = ", ".join(s.get("categories") or [])
+    text, kb = build_specs_page(specs, page=page)
+    try:
+        await c.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        # на всякий случай, если Telegram не даёт редактировать
+        await c.message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+    await c.answer()
+
+
+
+def build_specs_page(specs: list[dict], page: int) -> tuple[str, InlineKeyboardMarkup | None]:
+    """
+    Возвращает (text, keyboard) для списка специалистов на указанной странице.
+    """
+    total = len(specs)
+    if total == 0:
+        return "Пока нет зарегистрированных специалистов.", None
+
+    pages = max(1, math.ceil(total / PAGE_SIZE))
+    page = max(1, min(page, pages))
+
+    start = (page - 1) * PAGE_SIZE
+    end = start + PAGE_SIZE
+    chunk = specs[start:end]
+
+    lines: list[str] = []
+    lines.append(f"👨‍⚖️ <b>Список специалистов</b> (стр. {page}/{pages}, всего {total})\n")
+
+    for idx, s in enumerate(chunk, start=start + 1):
         full_name = html.escape(s.get("full_name") or "-")
+        username = html.escape(s.get("username") or "-")
+        cats = ", ".join(s.get("categories") or [])
         lines.append(
-            f"<code>ID={s['id']} TG={s['tg_user_id']} USER=@{username}\n"
-            f"NAME: {full_name}\n"
-            f"CATS: {categories}\n"
-            "------------------------</code>"
+            f"<b>{idx}.</b> {full_name}\n"
+            f"🔹 ФИО: <code>{full_name}</code>\n"
+            f"🔹 tg_id: <code>{s['tg_user_id']}</code>\n"
+            f"🔹 username: <code>@{username}</code>\n"
+            f"🔹 категории: <code>{cats or '—'}</code>\n"
+            "-------------------------"
         )
 
-    await m.answer("\n".join(lines), parse_mode="HTML")
+    text = "\n".join(lines)
+
+    # Клавиатура пагинации
+    buttons: list[list[InlineKeyboardButton]] = []
+    nav_row: list[InlineKeyboardButton] = []
+
+    if page > 1:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="⬅️ Назад",
+                callback_data=f"spec_list:{page-1}",
+            )
+        )
+    if page < pages:
+        nav_row.append(
+            InlineKeyboardButton(
+                text="Вперёд ➡️",
+                callback_data=f"spec_list:{page+1}",
+            )
+        )
+
+    if nav_row:
+        buttons.append(nav_row)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
+    return text, kb
 
 
 # -------------------- /invite_spec --------------------
