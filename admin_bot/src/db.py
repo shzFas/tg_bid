@@ -73,12 +73,14 @@ async def init_db() -> None:
 # -----------------------
 
 async def add_specialist(
+    *,
     tg_user_id: int,
     username: str | None = None,
     full_name: str | None = None,
 ) -> Dict[str, Any]:
     """
     Создаёт специалиста, если его нет, иначе обновляет username/full_name.
+    Использует ИМЕННЫЕ аргументы (tg_user_id=...).
     """
     pool = await get_pool()
     async with pool.acquire() as conn:

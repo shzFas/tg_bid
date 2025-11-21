@@ -98,22 +98,45 @@ async def new_spec_got_tg_id(m: Message, state: FSMContext):
     if not is_admin(m.from_user.id):
         return
 
-    text = (m.text or "").strip()
     try:
-        tg_id = int(text)
-    except Exception:
-        return await m.answer("tg_id должен быть числом. Попробуйте ещё раз или /cancel")
+        tg_id = int((m.text or "").strip())
+    except:
+        return await m.answer("❌ tg_id должен быть числом.")
 
-    # сохраняем tg_id во временные данные
-    await state.update_data(tg_id=tg_id, categories=[])
+    await state.update_data(tg_id=tg_id)
+    await state.set_state(NewSpecForm.WaitingForFullName)
+    await m.answer("Введите ФИО специалиста (например: <code>Иван Иванов</code>)", parse_mode="HTML")
 
-    # переходим к выбору категорий
+@router.message(NewSpecForm.WaitingForFullName)
+async def new_spec_got_name(m: Message, state: FSMContext):
+    if not is_admin(m.from_user.id):
+        return
+
+    full_name = (m.text or "").strip()
+    if len(full_name) < 3:
+        return await m.answer("❌ ФИО слишком короткое. Попробуйте ещё или /cancel")
+
+    data = await state.get_data()
+    tg_id = data["tg_id"]
+
+    # 🔍 Попробуем получить username по Telegram API
+    try:
+        chat = await m.bot.get_chat(tg_id)
+        username = chat.username  # может быть None
+    except:
+        username = None  # если не получилось
+
+    await state.update_data(full_name=full_name, username=username, categories=[])
     await state.set_state(NewSpecForm.ChoosingCategories)
+
     await m.answer(
-        f"tg_id = <code>{tg_id}</code>\n\n"
-        "Теперь выберите категории специалиста:",
+        f"📌 Данные специалиста:\n"
+        f"ID: <code>{tg_id}</code>\n"
+        f"ФИО: <code>{full_name}</code>\n"
+        f"username: <code>{username or '- (нет)'}</code>\n\n"
+        "Теперь выберите категории:",
         reply_markup=categories_kb(selected=[]),
-        parse_mode="HTML",
+        parse_mode="HTML"
     )
 
 
@@ -155,42 +178,30 @@ async def new_spec_cancel_cb(c: CallbackQuery, state: FSMContext):
 
 @router.callback_query(NewSpecForm.ChoosingCategories, F.data == "new_spec:save")
 async def new_spec_save(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        await c.answer("Нет доступа", show_alert=True)
-        return
-
     data = await state.get_data()
-    tg_id = data.get("tg_id")
-    categories: list[str] = data.get("categories", []) or []
+    tg_id = data["tg_id"]
+    full_name = data["full_name"]
+    username = data["username"]
+    categories = data["categories"] or []
 
-    if tg_id is None:
-        await c.answer("tg_id потерян, начните заново: /new_spec", show_alert=True)
-        return
-
-    if not categories:
-        await c.answer("Выберите хотя бы одну категорию.", show_alert=True)
-        return
-
-    # создаём / обновляем специалиста в БД
-    spec = await add_specialist(tg_id=tg_id, username=None)
+    spec = await add_specialist(
+        tg_user_id=tg_id,
+        username=username,
+        full_name=full_name
+    )
     await set_specialist_categories(tg_id, categories)
 
     await state.clear()
 
-    cats_str = ", ".join(categories)
-    safe_spec = html.escape(str(spec))
-
-    text = (
-        "<b>Специалист сохранён.</b>\n\n"
-        f"<code>{safe_spec}</code>\n\n"
-        f"Категории: <code>{cats_str}</code>\n\n"
-        "Теперь вы можете использовать:\n"
-        f"<code>/invite_spec {tg_id}</code> – ссылки в каналы\n"
-        f"<code>/notify_spec {tg_id}</code> – отправить всё ему в ЛС"
+    await c.message.edit_text(
+        f"<b>Специалист сохранён</b>\n"
+        f"ID: <code>{tg_id}</code>\n"
+        f"ФИО: <code>{full_name}</code>\n"
+        f"Username: <code>{username or '- (нет)'}</code>\n"
+        f"Категории: <code>{','.join(categories)}</code>",
+        parse_mode="HTML"
     )
-
-    await c.message.edit_text(text, parse_mode="HTML")
-    await c.answer("Специалист сохранён ✅")
+    await c.answer("Сохранено! ✅")
 
 
 # -------------------- /add_spec (остаётся для ручного ввода) --------------------
