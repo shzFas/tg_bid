@@ -76,10 +76,8 @@ async def cancel_cmd(m: Message, state: FSMContext):
 
 
 # -------------------- Мастер /new_spec --------------------
-# Шаг 1: спросить tg_id
-# Шаг 2: спросить ФИО
-# Шаг 3: выбрать категории по кнопкам
-# Шаг 4: сохранить в БД
+# mode = "new"
+# Шаг 1: tg_id → Шаг 2: ФИО → Шаг 3: категории → Сохранить
 
 
 @router.message(Command("new_spec"))
@@ -88,7 +86,7 @@ async def new_spec_start(m: Message, state: FSMContext):
         return
 
     await state.clear()
-    await state.update_data(mode="new")
+    await state.update_data(mode="new")  # создаём нового
     await state.set_state(NewSpecForm.WaitingForTgId)
 
     await m.answer(
@@ -100,8 +98,74 @@ async def new_spec_start(m: Message, state: FSMContext):
     )
 
 
+# -------------------- /edit_spec --------------------
+# mode = "edit"
+# Можно так: /edit_spec   → спросит tg_id
+# или так:  /edit_spec 6296976773 → сразу грузит данные
+
+
+@router.message(Command("edit_spec"))
+async def edit_spec_cmd(m: Message, command: CommandObject, state: FSMContext):
+    if not is_admin(m.from_user.id):
+        return
+
+    await state.clear()
+    await state.update_data(mode="edit")
+
+    # если tg_id передан сразу: /edit_spec 6296976773
+    if command.args:
+        try:
+            tg_id = int(command.args.strip())
+        except ValueError:
+            return await m.answer(
+                "❌ <b>tg_id должен быть числом.</b>\nПопробуйте ещё раз или /cancel",
+                parse_mode="HTML",
+            )
+
+        spec = await get_specialist_with_categories(tg_id)
+        if not spec:
+            return await m.answer(
+                "<code>Специалист с таким tg_id не найден. Сначала добавьте его через /new_spec.</code>",
+                parse_mode="HTML",
+            )
+
+        await state.update_data(
+            tg_id=tg_id,
+            full_name=spec.get("full_name") or "",
+            username=spec.get("username"),
+            categories=spec.get("categories") or [],
+        )
+        await state.set_state(NewSpecForm.WaitingForFullName)
+
+        cats_str = ", ".join(spec.get("categories") or [])
+        await m.answer(
+            "✏️ <b>Редактирование специалиста</b>\n\n"
+            f"Текущие данные:\n"
+            f"tg_id: <code>{tg_id}</code>\n"
+            f"ФИО: <code>{html.escape(spec.get('full_name') or '- (нет)')}</code>\n"
+            f"Username: <code>{html.escape(spec.get('username') or '- (нет)')}</code>\n"
+            f"Категории: <code>{cats_str or '- (нет)'}</code>\n\n"
+            "Отправьте <b>новое ФИО</b> (или то же самое, если не хотите менять).\n\n"
+            "Для отмены — /cancel",
+            parse_mode="HTML",
+        )
+        return
+
+    # если аргумент не передан — спросим tg_id
+    await state.set_state(NewSpecForm.WaitingForTgId)
+    await m.answer(
+        "✏️ <b>Редактирование специалиста</b>\n\n"
+        "Введите <code>tg_id</code> специалиста (число).\n\n"
+        "Для отмены — /cancel",
+        parse_mode="HTML",
+    )
+
+
+# -------------------- Общий шаг: ввод tg_id --------------------
+
+
 @router.message(NewSpecForm.WaitingForTgId)
-async def new_spec_got_tg_id(m: Message, state: FSMContext):
+async def spec_got_tg_id(m: Message, state: FSMContext):
     if not is_admin(m.from_user.id):
         return
 
@@ -114,9 +178,43 @@ async def new_spec_got_tg_id(m: Message, state: FSMContext):
             parse_mode="HTML",
         )
 
+    data = await state.get_data()
+    mode = data.get("mode", "new")
+
+    if mode == "edit":
+        # ищем существующего специалиста
+        spec = await get_specialist_with_categories(tg_id)
+        if not spec:
+            return await m.answer(
+                "<code>Специалист с таким tg_id не найден. Сначала добавьте его через /new_spec.</code>",
+                parse_mode="HTML",
+            )
+
+        await state.update_data(
+            tg_id=tg_id,
+            full_name=spec.get("full_name") or "",
+            username=spec.get("username"),
+            categories=spec.get("categories") or [],
+        )
+        await state.set_state(NewSpecForm.WaitingForFullName)
+
+        cats_str = ", ".join(spec.get("categories") or [])
+        await m.answer(
+            "✏️ <b>Редактирование специалиста</b>\n\n"
+            f"Текущие данные:\n"
+            f"tg_id: <code>{tg_id}</code>\n"
+            f"ФИО: <code>{html.escape(spec.get('full_name') or '- (нет)')}</code>\n"
+            f"Username: <code>{html.escape(spec.get('username') or '- (нет)')}</code>\n"
+            f"Категории: <code>{cats_str or '- (нет)'}</code>\n\n"
+            "Отправьте <b>новое ФИО</b> (или то же самое, если не хотите менять).\n\n"
+            "Для отмены — /cancel",
+            parse_mode="HTML",
+        )
+        return
+
+    # mode == "new"
     await state.update_data(tg_id=tg_id)
     await state.set_state(NewSpecForm.WaitingForFullName)
-
     await m.answer(
         f"🆔 tg_id = <code>{tg_id}</code>\n\n"
         "Теперь введите <b>ФИО специалиста</b>, например:\n"
@@ -126,8 +224,11 @@ async def new_spec_got_tg_id(m: Message, state: FSMContext):
     )
 
 
+# -------------------- Общий шаг: ввод ФИО --------------------
+
+
 @router.message(NewSpecForm.WaitingForFullName)
-async def new_spec_got_full_name(m: Message, state: FSMContext):
+async def spec_got_full_name(m: Message, state: FSMContext):
     if not is_admin(m.from_user.id):
         return
 
@@ -140,34 +241,44 @@ async def new_spec_got_full_name(m: Message, state: FSMContext):
 
     data = await state.get_data()
     tg_id = data.get("tg_id")
-    mode = data.get("mode", "new")
+    if tg_id is None:
+        await state.clear()
+        return await m.answer("tg_id потерян. Начните заново: /new_spec", parse_mode="HTML")
 
-    # Попробуем получить username по Telegram API
-    username = data.get("username")  # на случай edit-режима
+    mode = data.get("mode", "new")
+    username = data.get("username")
+
+    # пробуем обновить username по Telegram API
     try:
         chat = await m.bot.get_chat(tg_id)
         if chat.username:
             username = chat.username
     except Exception:
-        # если не получилось — оставляем как было (может быть None)
         pass
 
     await state.update_data(full_name=full_name, username=username)
 
-    # Переходим к выбору категорий
-    # При new_spec – без категорий, при edit_spec – категории уже могут быть в state
     current_categories: list[str] = data.get("categories", []) or []
-    await state.set_state(NewSpecForm.ChoosingCategories)
 
+    await state.set_state(NewSpecForm.ChoosingCategories)
     await m.answer(
-        "📂 Теперь выберите категории специалиста:",
+        (
+            "📌 Данные специалиста:\n"
+            f"tg_id: <code>{tg_id}</code>\n"
+            f"ФИО: <code>{html.escape(full_name)}</code>\n"
+            f"Username: <code>{html.escape(username or '- (нет)')}</code>\n\n"
+            "Теперь выберите категории специалиста:"
+        ),
         reply_markup=categories_kb(selected=current_categories),
         parse_mode="HTML",
     )
 
 
+# -------------------- Выбор категорий (callback) --------------------
+
+
 @router.callback_query(NewSpecForm.ChoosingCategories, F.data.startswith("new_spec:cat:"))
-async def new_spec_toggle_category(c: CallbackQuery, state: FSMContext):
+async def toggle_category(c: CallbackQuery, state: FSMContext):
     if not is_admin(c.from_user.id):
         await c.answer("Нет доступа", show_alert=True)
         return
@@ -218,11 +329,9 @@ async def new_spec_save(c: CallbackQuery, state: FSMContext):
     if tg_id is None:
         await c.answer("tg_id потерян, начните заново: /new_spec", show_alert=True)
         return
-
     if not full_name:
         await c.answer("ФИО не задано, начните заново: /new_spec", show_alert=True)
         return
-
     if not categories:
         await c.answer("Выберите хотя бы одну категорию.", show_alert=True)
         return
@@ -239,14 +348,13 @@ async def new_spec_save(c: CallbackQuery, state: FSMContext):
 
     cats_str = ", ".join(categories)
     safe_spec = html.escape(str(spec))
-
     prefix = "Добавлен новый специалист." if mode == "new" else "Данные специалиста обновлены."
 
     text = (
         f"<b>{prefix}</b>\n\n"
         f"<code>{safe_spec}</code>\n\n"
-        f"ФИО: <code>{full_name}</code>\n"
-        f"Username: <code>{username or '- (нет)'}</code>\n"
+        f"ФИО: <code>{html.escape(full_name)}</code>\n"
+        f"Username: <code>{html.escape(username or '- (нет)')}</code>\n"
         f"Категории: <code>{cats_str}</code>\n\n"
         "Теперь вы можете использовать:\n"
         f"<code>/invite_spec {tg_id}</code> – ссылки в каналы\n"
@@ -255,64 +363,6 @@ async def new_spec_save(c: CallbackQuery, state: FSMContext):
 
     await c.message.edit_text(text, parse_mode="HTML")
     await c.answer("Сохранено ✅")
-
-
-# -------------------- /edit_spec tg_id --------------------
-# Редактирование существующего специалиста:
-# - подставляем текущие ФИО, username, категории
-# - дальше логика такая же, как у мастера
-
-
-@router.message(Command("edit_spec"))
-async def edit_spec_cmd(m: Message, command: CommandObject, state: FSMContext):
-    if not is_admin(m.from_user.id):
-        return
-
-    if not command.args:
-        return await m.answer(
-            "<code>Использование: /edit_spec tg_id</code>",
-            parse_mode="HTML",
-        )
-
-    try:
-        tg_id = int(command.args.strip())
-    except ValueError:
-        return await m.answer(
-            "<code>tg_id должен быть числом</code>",
-            parse_mode="HTML",
-        )
-
-    spec = await get_specialist_with_categories(tg_id)
-    if not spec:
-        return await m.answer(
-            "<code>Специалист с таким tg_id не найден. Сначала добавьте его через /new_spec.</code>",
-            parse_mode="HTML",
-        )
-
-    # Подготовим состояние для редактирования
-    await state.clear()
-    await state.update_data(
-        mode="edit",
-        tg_id=tg_id,
-        full_name=spec.get("full_name") or "",
-        username=spec.get("username"),
-        categories=spec.get("categories") or [],
-    )
-    await state.set_state(NewSpecForm.WaitingForFullName)
-
-    cats_str = ", ".join(spec.get("categories") or [])
-
-    await m.answer(
-        "✏️ <b>Редактирование специалиста</b>\n\n"
-        f"Текущие данные:\n"
-        f"tg_id: <code>{tg_id}</code>\n"
-        f"ФИО: <code>{spec.get('full_name') or '- (нет)'}</code>\n"
-        f"Username: <code>{spec.get('username') or '- (нет)'}</code>\n"
-        f"Категории: <code>{cats_str or '- (нет)'}</code>\n\n"
-        "Отправьте <b>новое ФИО</b> (или то же самое, если не хотите менять).\n\n"
-        "Для отмены — /cancel",
-        parse_mode="HTML",
-    )
 
 
 # -------------------- /list_specs --------------------
@@ -330,7 +380,7 @@ async def list_specs(m: Message):
     lines = []
     for s in specs:
         username = html.escape(s.get("username") or "-")
-        categories = ", ".join(s["categories"] or [])
+        categories = ", ".join(s.get("categories") or [])
         full_name = html.escape(s.get("full_name") or "-")
         lines.append(
             f"<code>ID={s['id']} TG={s['tg_user_id']} USER=@{username}\n"
@@ -379,7 +429,7 @@ async def invite_spec(m: Message, command: CommandObject):
     msg = (
         f"<b>Ссылки для специалиста tg_id={tg_id}</b>\n"
         f"ФИО: <code>{html.escape(spec.get('full_name') or '-')}</code>\n"
-        f"username=@{html.escape(spec.get('username') or '- ')}\n\n"
+        f"username=@{html.escape(spec.get('username') or '-')}</f>\n\n"
         + "\n".join(f"<code>{line}</code>" for line in links_lines)
     )
     await m.answer(msg, parse_mode="HTML")
