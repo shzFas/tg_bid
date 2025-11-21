@@ -5,8 +5,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     ADMIN_BOT_TOKEN: str
     DATABASE_URL: str
-    ADMIN_IDS: str  # Список: "123,456"
+    ADMIN_IDS: str
     TZ: str | None = None
+
+    CHANNEL_ACCOUNTING_ID: int
+    CHANNEL_LAW_ID: int
+    CHANNEL_EGOV_ID: int
+
+    DM_BOT_USERNAME: str  # например ZayavkaWorkKzHelperBot
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).parent.parent / ".env",
@@ -23,3 +29,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+CATEGORY_TO_CHANNEL = {
+    "ACCOUNTING": settings.CHANNEL_ACCOUNTING_ID,
+    "LAW": settings.CHANNEL_LAW_ID,
+    "EGOV": settings.CHANNEL_EGOV_ID,
+}
