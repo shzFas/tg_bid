@@ -8,6 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramForbiddenError
 
 from .config import settings, CATEGORY_TO_CHANNEL
 from .states import RequestForm
@@ -328,26 +329,53 @@ async def claim_request(c: CallbackQuery):
         uname
     )
 
+    # текст заявки из канала
+    original_text = c.message.text or ""
 
-    # редактируем сообщение в канале
+    # 🔵 создаём экземпляр второго бота (dm_bot)
+    dm_bot = Bot(
+        token=settings.BOT2_TOKEN,
+        default=DefaultBotProperties(parse_mode="HTML"),
+    )
+
+    # Пытаемся отправить заявку в ЛС от имени второго бота
+    try:
+        await dm_bot.send_message(
+            chat_id=user.id,
+            text=(
+                "🆕 Вы приняли новую заявку:\n\n"
+                f"{original_text}\n\n"
+                "Теперь вы можете связаться с клиентом и вести работу по этой заявке."
+            ),
+        )
+    except TelegramForbiddenError:
+        # пользователь ни разу не нажимал /start у dm-бота
+        await c.answer(
+            "Второй бот не может написать вам в ЛС.\n"
+            "Откройте @{} и нажмите /start, затем попробуйте снова.".format(
+                settings.BOT2_USERNAME
+            ),
+            show_alert=True,
+        )
+    finally:
+        # аккуратно закрываем сессию второго бота
+        await dm_bot.session.close()
+
+    # Обновляем сообщение в канале
     new_text = (
         f"✅ Заявка принята в работу\n\n"
-        f"{c.message.text}\n\n"
+        f"{original_text}\n\n"
         f"👨‍💼 Принял: @{uname}"
     )
     try:
         await c.message.edit_text(new_text)
+        # убираем клавиатуру, чтобы второй раз не нажимали
+        await c.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
 
-    # генерируем короткий токен для dm_bot
-    token = make_short_token(msg_id)
+    await c.answer("Заявка принята. Я отправил её вам в ЛС через второго бота.")
 
-    # кнопка «Открыть диалог с ботом»
-    kb = open_dm_external_kb(settings.BOT2_USERNAME, token)
-    await c.message.edit_reply_markup(reply_markup=kb)
-
-    await c.answer("Нажмите кнопку, чтобы получить заявку в ЛС.")
 
 
 # ----------------------------------------------------
