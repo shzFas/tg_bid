@@ -3,6 +3,7 @@ from pathlib import Path
 
 class Settings(BaseSettings):
     BOT_TOKEN: str
+    BOT2_TOKEN: str | None = None
 
     CHANNEL_ACCOUNTING_ID: int
     CHANNEL_LAW_ID: int
