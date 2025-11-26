@@ -1,35 +1,50 @@
 import asyncio
 import logging
+import hmac
+import hashlib
 from typing import Dict, List
 
 from aiogram import Bot, Dispatcher, Router, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command, CommandStart
-from aiogram.types import (
-    Message,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    CallbackQuery,
-)
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
-from .config import settings
-from .texts import *
+from .config import settings, CATEGORY_TO_CHANNEL, CATEGORY_H
 from .crypto import verify_short_token
 from .db import (
     init_db,
     get_pool,
+    get_request_by_message_id,
     set_status_in_progress,
     set_status_done,
     set_status_canceled,
     reset_to_pending,
     list_claims_for_user,
 )
+from .keyboards import claim_kb, open_dm_external_kb
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 router = Router()
 
-# Глобальное временное состояние: user_id -> message_id
-cancel_state: Dict[int, int] = {}
+# user_id → {request_id, dm_message_id}
+cancel_state: Dict[int, Dict] = {}
+
+# msg_id → cached request info
+active_requests: dict[int, dict] = {}
+
+
+# ----------------------------------------------------
+# TOKEN (для открытия DM по кнопке)
+# ----------------------------------------------------
+
+def make_short_token(message_id: int) -> str:
+    mid_hex = format(message_id, "x")
+    sig = hmac.new(
+        settings.SHARED_SECRET.encode(),
+        mid_hex.encode(),
+        hashlib.sha256
+    ).hexdigest()[:16]
+    return f"{mid_hex}.{sig}"
 
 
 # ----------------------------------------------------
@@ -37,14 +52,9 @@ cancel_state: Dict[int, int] = {}
 # ----------------------------------------------------
 
 def fmt_payload(row: Dict) -> str:
-    try:
-        from .texts import CATEGORY_H
-        category_h = CATEGORY_H.get(row["category"], row["category"])
-    except Exception:
-        category_h = row["category"]
-
+    category_h = CATEGORY_H.get(row["category"], row["category"])
     return (
-        f"{DELIVERED_PREFIX}\n"
+        f"📄 <b>Ваша заявка:</b>\n\n"
         f"👤 Имя: {row['name']}\n"
         f"📞 Телефон: {row['phone']}\n"
         f"⚖️ Категория: {category_h}\n"
@@ -66,50 +76,41 @@ def task_kb(message_id: int):
 
 
 # ----------------------------------------------------
-# /start
+# /start <token>
 # ----------------------------------------------------
 
 @router.message(CommandStart())
 async def start(m: Message):
-    token = None
-    if m.text and " " in m.text:
-        token = m.text.split(" ", 1)[1].strip()
+    token = m.text.split(" ", 1)[1].strip() if " " in m.text else None
 
     if not token:
-        await m.answer(WELCOME + "\n\n" + HELP)
+        await m.answer("Привет! Используйте кнопку в канале, чтобы получить заявку.")
         return
 
-    msg_id = verify_short_token(token, settings.SHARED_SECRET)
-    if not msg_id:
-        await m.answer(INVALID_OR_EXPIRED)
+    message_id = verify_short_token(token, settings.SHARED_SECRET)
+    if not message_id:
+        await m.answer("❌ Токен просрочен или неверен.")
         return
 
-    async with (await get_pool()).acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT * FROM requests WHERE message_id = $1",
-            msg_id,
-        )
-
-    if not row:
-        await m.answer(NOT_FOUND)
+    req = await get_request_by_message_id(message_id)
+    if not req:
+        await m.answer("❌ Заявка не найдена.")
         return
 
-    data = dict(row)
-
-    # Если заявку уже взял другой специалист
-    if data["claimer_user_id"] and data["claimer_user_id"] != m.from_user.id:
-        await m.answer(NOT_YOU)
+    # Проверка владельца
+    if req["claimer_user_id"] and req["claimer_user_id"] != m.from_user.id:
+        await m.answer("Эта заявка уже в работе у другого специалиста.")
         return
 
-    # Привязываем специалиста
-    if data["claimer_user_id"] is None:
+    # Присваиваем заявку специалисту
+    if req["claimer_user_id"] is None:
         await set_status_in_progress(
-            msg_id,
+            message_id,
             m.from_user.id,
             m.from_user.username or m.from_user.full_name or str(m.from_user.id),
         )
 
-    await m.answer(fmt_payload(data), reply_markup=task_kb(msg_id))
+    await m.answer(fmt_payload(req), reply_markup=task_kb(message_id))
 
 
 # ----------------------------------------------------
@@ -121,107 +122,141 @@ async def cb_done(c: CallbackQuery):
     message_id = int(c.data.split(":")[1])
 
     await set_status_done(message_id)
-
     await c.message.edit_text("✅ Заявка выполнена и отправлена в архив.")
     await c.answer()
 
 
 # ----------------------------------------------------
-# Отменить — запрос комментария
+# Отменить → запрос комментария
 # ----------------------------------------------------
 
 @router.callback_query(F.data.startswith("cancel:"))
 async def cb_cancel(c: CallbackQuery):
     message_id = int(c.data.split(":")[1])
 
-    cancel_state[c.from_user.id] = message_id
+    cancel_state[c.from_user.id] = {
+        "request_id": message_id,
+        "dm_message_id": c.message.message_id
+    }
 
     await c.message.answer("📝 Напишите причину отмены заявки:")
     await c.answer()
 
 
 # ----------------------------------------------------
-# Отмена — приём комментария
+# Получение комментария
 # ----------------------------------------------------
 
 @router.message(F.text & (~F.text.startswith("/")))
 async def handle_cancel_comment(m: Message):
     user_id = m.from_user.id
-
-    # Если пользователь не в состоянии отмены → пропускаем
     if user_id not in cancel_state:
         return
 
-    message_id = cancel_state[user_id]
+    req_info = cancel_state[user_id]
+    old_msg_id = req_info["request_id"]
+    dm_message_id = req_info["dm_message_id"]
     comment = m.text.strip()
 
-    # 1. Ставим статус CANCELED + коммент
-    await set_status_canceled(message_id, comment)
+    # Обновляем статус
+    await set_status_canceled(old_msg_id, comment)
+    await reset_to_pending(old_msg_id)
 
-    # 2. Ставим статус обратно в PENDING
-    await reset_to_pending(message_id)
-
-    # 3. Загружаем заявку из БД
-    pool = await get_pool()
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT * FROM requests WHERE message_id = $1;",
-            message_id
-        )
-
-    if not row:
+    # Загружаем заявку
+    req = await get_request_by_message_id(old_msg_id)
+    if not req:
         await m.answer("❌ Ошибка: заявка не найдена.")
         del cancel_state[user_id]
         return
 
-    data = dict(row)
+    category_h = CATEGORY_H.get(req["category"], req["category"])
+    channel_id = CATEGORY_TO_CHANNEL[req["category"]]
 
-    # Категория для публикации в правильный канал
-    try:
-        from .texts import CATEGORY_H
-        category_h = CATEGORY_H.get(data["category"], data["category"])
-    except:
-        category_h = data["category"]
-
-    # 4. Формируем текст для канала
+    # Формируем новое сообщение
     text_back = (
         "🔄 <b>Заявка снова доступна</b>\n\n"
         f"💬 <b>Комментарий специалиста:</b>\n<i>{comment}</i>\n\n"
-        f"👤 {data['name']}\n"
-        f"📞 {data['phone']}\n"
+        f"👤 {req['name']}\n"
+        f"📞 {req['phone']}\n"
         f"⚖️ Категория: {category_h}\n"
-        f"🏙️ Город: {data['city']}\n"
-        f"📝 {data['description']}\n"
-        f"🕒 {data['created_at']}"
+        f"🏙️ Город: {req['city']}\n"
+        f"📝 {req['description']}\n"
+        f"🕒 {req['created_at']}"
     )
 
-    # 5. Публикуем обратно в канал категории
-    try:
-        from .config import CATEGORY_TO_CHANNEL
-        channel_id = CATEGORY_TO_CHANNEL[data["category"]]
+    # Отправляем новое сообщение в канал
+    new_msg = await m.bot.send_message(
+        chat_id=channel_id,
+        text=text_back,
+        reply_markup=claim_kb()
+    )
 
-        await m.bot.send_message(
-            chat_id=channel_id,
-            text=text_back
+    # Обновляем message_id заявки в БД
+    async with (await get_pool()).acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE requests
+            SET message_id = $1,
+                claimer_user_id = NULL,
+                claimer_username = NULL,
+                status = 'PENDING'
+            WHERE message_id = $2;
+            """,
+            new_msg.message_id,
+            old_msg_id
         )
-    except Exception as e:
-        await m.answer(f"Ошибка при публикации в канал: {e}")
 
-    # 6. Сообщение пользователю
-    await m.answer("❌ Заявка отменена и возвращена в общий канал.")
-
-    # 7. Удаляем кнопки на предыдущем сообщении (чтобы нельзя было нажать «Готово»)
+    # Удаляем карточку задач в ЛС
     try:
-        await m.bot.edit_message_reply_markup(
+        await m.bot.delete_message(
             chat_id=m.chat.id,
-            message_id=m.message_id - 1,  # предыдущее сообщение — карточка заявки
-            reply_markup=None
+            message_id=dm_message_id
         )
     except:
         pass
 
-    # 8. Удаляем состояние
+    await m.answer("❌ Заявка отменена и возвращена в общий канал.")
     del cancel_state[user_id]
+
+
+# ----------------------------------------------------
+# Принять заявку (claim)
+# ----------------------------------------------------
+
+@router.callback_query(F.data == "req:claim")
+async def claim_request(c: CallbackQuery):
+    msg_id = c.message.message_id
+
+    req = await get_request_by_message_id(msg_id)
+    if not req:
+        await c.answer("Заявка не найдена или устарела.", show_alert=True)
+        return
+
+    if req["claimer_user_id"] and req["claimer_user_id"] != c.from_user.id:
+        await c.answer(f"Уже в работе у @{req['claimer_username']}.", show_alert=True)
+        return
+
+    uname = c.from_user.username or c.from_user.full_name or str(c.from_user.id)
+
+    await set_status_in_progress(msg_id, c.from_user.id, uname)
+
+    new_text = (
+        f"✅ Заявка принята в работу\n\n"
+        f"{c.message.text}\n\n"
+        f"👨‍💼 Принял: @{uname}"
+    )
+
+    try:
+        await c.message.edit_text(new_text)
+    except:
+        pass
+
+    # Ссылка на DM-бот
+    token = make_short_token(msg_id)
+    kb = open_dm_external_kb(settings.BOT2_USERNAME, token)
+    await c.message.edit_reply_markup(reply_markup=kb)
+
+    await c.answer("Вы взяли заявку.")
 
 
 # ----------------------------------------------------
@@ -236,35 +271,21 @@ async def tasks(m: Message):
         await m.answer("У вас нет активных заявок.")
         return
 
-    lines = ["<b>📋 Ваши активные заявки:</b>\n"]
+    out = ["<b>📋 Ваши активные заявки:</b>\n"]
 
     for r in claims:
-        try:
-            from .texts import CATEGORY_H
-            category_h = CATEGORY_H.get(r["category"], r["category"])
-        except Exception:
-            category_h = r["category"]
-
-        lines.append(
+        category_h = CATEGORY_H.get(r["category"], r["category"])
+        out.append(
             f"🔹 <b>#{r['message_id']}</b>\n"
             f"👤 {r['name']}\n"
             f"📞 {r['phone']}\n"
             f"🏙️ {r['city']}\n"
-            f"⚖️ Категория: {category_h}\n"
+            f"⚖️ {category_h}\n"
             f"📝 {r['description']}\n"
-            f"------------------------------"
+            f"----------------------"
         )
 
-    await m.answer("\n".join(lines))
-
-
-# ----------------------------------------------------
-# /help
-# ----------------------------------------------------
-
-@router.message(Command("help"))
-async def help_cmd(m: Message):
-    await m.answer(HELP)
+    await m.answer("\n".join(out))
 
 
 # ----------------------------------------------------
