@@ -177,7 +177,6 @@ async def handle_cancel_comment(m: Message):
         "🔄 <b>Заявка снова доступна</b>\n\n"
         f"💬 <b>Комментарий специалиста:</b>\n<i>{comment}</i>\n\n"
         f"👤 {req['name']}\n"
-        f"📞 {req['phone']}\n"
         f"⚖️ Категория: {category_h}\n"
         f"🏙️ Город: {req['city']}\n"
         f"📝 {req['description']}\n"
