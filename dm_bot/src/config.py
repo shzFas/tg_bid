@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     CATEGORY_ACCOUNTING_NAME: str
     CATEGORY_LAW_NAME: str
     CATEGORY_EGOV_NAME: str
+    
+    BOT2_USERNAME: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).parent.parent / ".env",
