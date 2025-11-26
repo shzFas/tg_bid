@@ -21,7 +21,7 @@ from .db import (
     reset_to_pending,
     list_claims_for_user,
 )
-from .keyboards import claim_kb, open_dm_external_kb
+from .keyboards import claim_kb
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 router = Router()
@@ -29,12 +29,12 @@ router = Router()
 # user_id → {request_id, dm_message_id}
 cancel_state: Dict[int, Dict] = {}
 
-# msg_id → cached request info
+# msg_id → cached request info (если понадобится)
 active_requests: dict[int, dict] = {}
 
 
 # ----------------------------------------------------
-# TOKEN (для открытия DM по кнопке)
+# TOKEN (для старого механизма, можно оставить на будущее)
 # ----------------------------------------------------
 
 def make_short_token(message_id: int) -> str:
@@ -54,13 +54,14 @@ def make_short_token(message_id: int) -> str:
 def fmt_payload(row: Dict) -> str:
     category_h = CATEGORY_H.get(row["category"], row["category"])
     return (
-        f"📄 <b>Ваша заявка:</b>\n\n"
+        f"📄 <b>Заявка клиента:</b>\n\n"
         f"👤 Имя: {row['name']}\n"
         f"📞 Телефон: {row['phone']}\n"
         f"⚖️ Категория: {category_h}\n"
         f"🏙️ Город: {row['city']}\n"
         f"📝 {row['description']}\n"
-        f"🕒 {row['created_at']}"
+        f"🕒 {row['created_at']}\n\n"
+        f"Теперь вы можете связаться с клиентом и вести работу по этой заявке."
     )
 
 
@@ -172,7 +173,7 @@ async def handle_cancel_comment(m: Message):
     category_h = CATEGORY_H.get(req["category"], req["category"])
     channel_id = CATEGORY_TO_CHANNEL[req["category"]]
 
-    # Формируем новое сообщение
+    # Формируем новое сообщение (как на скрине)
     text_back = (
         "🔄 <b>Заявка снова доступна</b>\n\n"
         f"💬 <b>Комментарий специалиста:</b>\n<i>{comment}</i>\n\n"
@@ -219,7 +220,7 @@ async def handle_cancel_comment(m: Message):
 
 
 # ----------------------------------------------------
-# Принять заявку (claim)
+# Принять заявку (повторная рассылка с комментарием)
 # ----------------------------------------------------
 
 @router.callback_query(F.data == "req:claim")
@@ -231,35 +232,51 @@ async def claim_request(c: CallbackQuery):
         await c.answer("Заявка не найдена или устарела.", show_alert=True)
         return
 
+    # Уже в работе у другого
     if req["claimer_user_id"] and req["claimer_user_id"] != c.from_user.id:
         await c.answer(f"Уже в работе у @{req['claimer_username']}.", show_alert=True)
         return
 
     uname = c.from_user.username or c.from_user.full_name or str(c.from_user.id)
 
+    # Помечаем как "в работе"
     await set_status_in_progress(msg_id, c.from_user.id, uname)
 
-    new_text = (
-        f"✅ Заявка принята в работу\n\n"
-        f"{c.message.text}\n\n"
-        f"👨‍💼 Принял: @{uname}"
+    # Текст из канала (там уже есть "Заявка снова доступна" и "Комментарий специалиста")
+    original_text = c.message.text or ""
+    phone = req.get("phone")
+
+    # 🔹 Текст, который уйдёт в ЛС новому специалисту
+    lines = [
+        "🆕 Вы приняли заявку:",
+        "",
+        original_text,
+        "",
+        "Теперь вы можете связаться с клиентом и вести работу по этой заявке.",
+    ]
+
+    await c.bot.send_message(
+        chat_id=c.from_user.id,
+        text="\n".join(lines),
     )
 
+    # 🔹 Обновляем сообщение в канале
+    new_text = (
+        "✅ Заявка принята в работу\n\n"
+        f"{original_text}\n\n"
+        f"👨‍💼 Принял: @{uname}"
+    )
     try:
         await c.message.edit_text(new_text)
+        await c.message.edit_reply_markup(reply_markup=None)
     except:
         pass
 
-    # Ссылка на DM-бот
-    token = make_short_token(msg_id)
-    kb = open_dm_external_kb(settings.BOT2_USERNAME, token)
-    await c.message.edit_reply_markup(reply_markup=kb)
-
-    await c.answer("Вы взяли заявку.")
+    await c.answer("Вы взяли заявку. Подробности отправлены вам в ЛС.")
 
 
 # ----------------------------------------------------
-# /tasks
+# /tasks — список активных заявок с кнопками
 # ----------------------------------------------------
 
 @router.message(Command("tasks"))
@@ -270,21 +287,16 @@ async def tasks(m: Message):
         await m.answer("У вас нет активных заявок.")
         return
 
-    out = ["<b>📋 Ваши активные заявки:</b>\n"]
+    await m.answer(
+        f"📋 У вас {len(claims)} активных заявок.\n"
+        f"Каждая заявка отправлена отдельной карточкой ниже."
+    )
 
     for r in claims:
-        category_h = CATEGORY_H.get(r["category"], r["category"])
-        out.append(
-            f"🔹 <b>#{r['message_id']}</b>\n"
-            f"👤 {r['name']}\n"
-            f"📞 {r['phone']}\n"
-            f"🏙️ {r['city']}\n"
-            f"⚖️ {category_h}\n"
-            f"📝 {r['description']}\n"
-            f"----------------------"
-        )
-
-    await m.answer("\n".join(out))
+        text = fmt_payload(r)
+        kb = task_kb(r["message_id"])
+        await m.answer(text, reply_markup=kb)
+        await asyncio.sleep(0.05)  # небольшой анти-флуд
 
 
 # ----------------------------------------------------
