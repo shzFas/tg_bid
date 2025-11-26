@@ -17,7 +17,7 @@ from .keyboards import (
 )
 from .texts import *
 from .utils import preview_text, now_local_str
-from .db import init_db, save_request, get_request_by_message_id, set_request_claimed
+from .db import init_db, save_request, get_request_by_message_id, set_status_in_progress
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
@@ -322,11 +322,12 @@ async def claim_request(c: CallbackQuery):
     req["username"] = uname
 
     # сохраняем в БД владельца заявки
-    await set_request_claimed(
-        message_id=msg_id,
-        claimer_user_id=user.id,
-        claimer_username=uname,
+    await set_status_in_progress(
+        msg_id,
+        user.id,
+        uname
     )
+
 
     # редактируем сообщение в канале
     new_text = (
