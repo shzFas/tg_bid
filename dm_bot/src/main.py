@@ -155,12 +155,73 @@ async def handle_cancel_comment(m: Message):
     message_id = cancel_state[user_id]
     comment = m.text.strip()
 
+    # 1. Ставим статус CANCELED + коммент
     await set_status_canceled(message_id, comment)
+
+    # 2. Ставим статус обратно в PENDING
     await reset_to_pending(message_id)
 
-    del cancel_state[user_id]
+    # 3. Загружаем заявку из БД
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM requests WHERE message_id = $1;",
+            message_id
+        )
 
+    if not row:
+        await m.answer("❌ Ошибка: заявка не найдена.")
+        del cancel_state[user_id]
+        return
+
+    data = dict(row)
+
+    # Категория для публикации в правильный канал
+    try:
+        from .texts import CATEGORY_H
+        category_h = CATEGORY_H.get(data["category"], data["category"])
+    except:
+        category_h = data["category"]
+
+    # 4. Формируем текст для канала
+    text_back = (
+        "🔄 <b>Заявка снова доступна</b>\n\n"
+        f"💬 <b>Комментарий специалиста:</b>\n<i>{comment}</i>\n\n"
+        f"👤 {data['name']}\n"
+        f"📞 {data['phone']}\n"
+        f"⚖️ Категория: {category_h}\n"
+        f"🏙️ Город: {data['city']}\n"
+        f"📝 {data['description']}\n"
+        f"🕒 {data['created_at']}"
+    )
+
+    # 5. Публикуем обратно в канал категории
+    try:
+        from .config import CATEGORY_TO_CHANNEL
+        channel_id = CATEGORY_TO_CHANNEL[data["category"]]
+
+        await m.bot.send_message(
+            chat_id=channel_id,
+            text=text_back
+        )
+    except Exception as e:
+        await m.answer(f"Ошибка при публикации в канал: {e}")
+
+    # 6. Сообщение пользователю
     await m.answer("❌ Заявка отменена и возвращена в общий канал.")
+
+    # 7. Удаляем кнопки на предыдущем сообщении (чтобы нельзя было нажать «Готово»)
+    try:
+        await m.bot.edit_message_reply_markup(
+            chat_id=m.chat.id,
+            message_id=m.message_id - 1,  # предыдущее сообщение — карточка заявки
+            reply_markup=None
+        )
+    except:
+        pass
+
+    # 8. Удаляем состояние
+    del cancel_state[user_id]
 
 
 # ----------------------------------------------------
