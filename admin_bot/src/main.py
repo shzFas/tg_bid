@@ -40,13 +40,6 @@ HELP_TEXT = (
     "<code>/list_specs</code> – список всех специалистов\n"
     "<code>/invite_spec tg_id</code> – ссылки в каналы\n"
     "<code>/notify_spec tg_id</code> – отправить ссылки специалисту\n\n"
-    "<b>📂 Работа с заявками (позже):</b>\n"
-    "<code>/req id</code>\n"
-    "<code>/set_phone id номер</code>\n"
-    "<code>/set_city id город</code>\n"
-    "<code>/set_desc id текст</code>\n\n"
-    "<b>📤 Excel экспорт:</b>\n"
-    "<code>/export</code>\n"
 )
 
 
@@ -56,14 +49,14 @@ HELP_TEXT = (
 async def start(m: Message):
     if not is_admin(m.from_user.id):
         return
-    await m.answer(HELP_TEXT, parse_mode="HTML")
+    await m.answer(HELP_TEXT)
 
 
 @router.message(Command("help"))
 async def help_cmd(m: Message):
     if not is_admin(m.from_user.id):
         return
-    await m.answer(HELP_TEXT, parse_mode="HTML")
+    await m.answer(HELP_TEXT)
 
 
 # -------------------- /cancel --------------------
@@ -73,10 +66,10 @@ async def cancel_cmd(m: Message, state: FSMContext):
     if not is_admin(m.from_user.id):
         return
     await state.clear()
-    await m.answer("Операция отменена.", parse_mode="HTML")
+    await m.answer("Операция отменена.")
 
 
-# -------------------- /new_spec (Шаги) --------------------
+# -------------------- /new_spec --------------------
 
 @router.message(Command("new_spec"))
 async def new_spec_start(m: Message, state: FSMContext):
@@ -87,11 +80,7 @@ async def new_spec_start(m: Message, state: FSMContext):
     await state.update_data(mode="new")
     await state.set_state(NewSpecForm.WaitingForTgId)
 
-    await m.answer(
-        "➕ <b>Добавление нового специалиста</b>\n\n"
-        "Введите <code>tg_id</code> специалиста:",
-        parse_mode="HTML",
-    )
+    await m.answer("➕ <b>Добавление нового специалиста</b>\nВведите tg_id:")
 
 
 # -------------------- /edit_spec --------------------
@@ -106,27 +95,25 @@ async def edit_spec_cmd(m: Message, command: CommandObject, state: FSMContext):
 
     if command.args:
         try:
-            tg_id = int(command.args.strip())
-        except ValueError:
-            return await m.answer("❌ tg_id должен быть числом", parse_mode="HTML")
+            tg_id = int(command.args)
+        except:
+            return await m.answer("tg_id должен быть числом")
 
         spec = await get_specialist_with_categories(tg_id)
         if not spec:
-            return await m.answer("❌ Специалист не найден.", parse_mode="HTML")
+            return await m.answer("❌ Специалист не найден")
 
         await state.update_data(
             tg_id=tg_id,
-            full_name=spec.get("full_name"),
-            username=spec.get("username"),
-            categories=spec.get("categories") or [],
+            full_name=spec["full_name"],
+            username=spec["username"],
+            categories=spec["categories"] or []
         )
-
         await state.set_state(NewSpecForm.WaitingForFullName)
-        await m.answer("Введите новое ФИО:", parse_mode="HTML")
-        return
+        return await m.answer("Введите новое ФИО:")
 
     await state.set_state(NewSpecForm.WaitingForTgId)
-    await m.answer("Введите tg_id специалиста:", parse_mode="HTML")
+    await m.answer("Введите tg_id специалиста:")
 
 
 # -------------------- Шаг 1: tg_id --------------------
@@ -139,30 +126,28 @@ async def spec_got_tg_id(m: Message, state: FSMContext):
     try:
         tg_id = int(m.text.strip())
     except:
-        return await m.answer("❌ tg_id должен быть числом")
+        return await m.answer("tg_id должен быть числом")
 
     data = await state.get_data()
-    mode = data.get("mode", "new")
+    mode = data["mode"]
 
-    # Если редактируем — подгрузить данные
     if mode == "edit":
         spec = await get_specialist_with_categories(tg_id)
         if not spec:
-            return await m.answer("❌ Специалист не найден.", parse_mode="HTML")
+            return await m.answer("❌ Специалист не найден")
 
         await state.update_data(
             tg_id=tg_id,
-            full_name=spec.get("full_name"),
-            username=spec.get("username"),
-            categories=spec.get("categories") or [],
+            full_name=spec["full_name"],
+            username=spec["username"],
+            categories=spec["categories"] or []
         )
         await state.set_state(NewSpecForm.WaitingForFullName)
-        return await m.answer("Введите ФИО специалиста:", parse_mode="HTML")
+        return await m.answer("Введите новое ФИО:")
 
-    # Новый специалист
     await state.update_data(tg_id=tg_id)
     await state.set_state(NewSpecForm.WaitingForFullName)
-    await m.answer("Введите ФИО специалиста:", parse_mode="HTML")
+    await m.answer("Введите ФИО специалиста:")
 
 
 # -------------------- Шаг 2: ФИО --------------------
@@ -174,13 +159,13 @@ async def spec_got_full_name(m: Message, state: FSMContext):
 
     full_name = m.text.strip()
     if not full_name:
-        return await m.answer("❌ ФИО слишком короткое")
+        return await m.answer("ФИО слишком короткое")
 
     data = await state.get_data()
     tg_id = data["tg_id"]
     username = data.get("username")
 
-    # автоматическое получение username из Telegram
+    # авто-username
     try:
         chat = await m.bot.get_chat(tg_id)
         if chat.username:
@@ -192,22 +177,19 @@ async def spec_got_full_name(m: Message, state: FSMContext):
     await state.set_state(NewSpecForm.ChoosingCategories)
 
     await m.answer(
-        "Выберите категории специалиста:",
-        reply_markup=categories_kb(selected=data.get("categories", [])),
+        "Выберите категории:",
+        reply_markup=categories_kb(selected=data.get("categories", []), mode="new")
     )
 
 
-# -------------------- Выбор категорий --------------------
+# -------------------- new_spec toggle/save --------------------
 
-@router.callback_query(NewSpecForm.ChoosingCategories, F.data.startswith("new_spec:cat:"))
-async def toggle_category(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа", show_alert=True)
+@router.callback_query(NewSpecForm.ChoosingCategories, F.data.startswith("new_spec:toggle:"))
+async def new_spec_toggle(c: CallbackQuery, state: FSMContext):
+    _, _, cat = c.data.split(":")
 
     data = await state.get_data()
-    selected = data.get("categories", []) or []
-
-    _, _, cat = c.data.split(":", 2)
+    selected = data.get("categories", [])
 
     if cat in selected:
         selected.remove(cat)
@@ -216,144 +198,105 @@ async def toggle_category(c: CallbackQuery, state: FSMContext):
 
     await state.update_data(categories=selected)
 
-    await c.message.edit_reply_markup(categories_kb(selected))
+    kb = categories_kb(selected=selected, mode="new")
+    await c.message.edit_reply_markup(reply_markup=kb)
     await c.answer()
 
 
 @router.callback_query(NewSpecForm.ChoosingCategories, F.data == "new_spec:save")
 async def new_spec_save(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа", show_alert=True)
-
     data = await state.get_data()
-
     tg_id = data["tg_id"]
     full_name = data["full_name"]
-    username = data.get("username")
-    categories = data.get("categories", [])
+    username = data["username"]
+    categories = data["categories"]
 
     await add_specialist(tg_user_id=tg_id, username=username, full_name=full_name)
     await set_specialist_categories(tg_id, categories)
-
     await state.clear()
 
-    cats_str = ", ".join(categories)
     await c.message.edit_text(
-        f"✅ Данные сохранены.\n\n"
+        f"✅ Добавлен специалист\n\n"
         f"<b>{full_name}</b>\n"
-        f"tg_id: <code>{tg_id}</code>\n"
-        f"username: @{username}\n"
-        f"Категории: <code>{cats_str}</code>\n",
-        parse_mode="HTML",
+        f"tg_id: {tg_id}\n"
+        f"Категории: {', '.join(categories)}"
     )
     await c.answer()
 
 
-# -------------------- СПИСОК СПЕЦИАЛИСТОВ --------------------
+# -------------------- СПИСОК --------------------
 
 @router.message(Command("list_specs"))
 async def list_specs(m: Message):
-    if not is_admin(m.from_user.id):
-        return
-
     specs = await get_specialists_list()
-    text, kb = build_specs_page(specs, page=1)
-
-    await m.answer(text, reply_markup=kb, parse_mode="HTML")
+    text, kb = build_specs_page(specs, 1)
+    await m.answer(text, reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("spec_list:"))
-async def specs_pagination(c: CallbackQuery):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа")
-
-    _, page_str = c.data.split(":", 1)
-    page = int(page_str)
-
+async def list_specs_page(c: CallbackQuery):
+    page = int(c.data.split(":")[1])
     specs = await get_specialists_list()
     text, kb = build_specs_page(specs, page)
-
-    try:
-        await c.message.edit_text(text, reply_markup=kb)
-    except:
-        await c.message.answer(text, reply_markup=kb)
-
+    await c.message.edit_text(text, reply_markup=kb)
     await c.answer()
 
 
-# ---------------- USER-FRIENDLY VIEW -----------------
-
 def build_specs_page(specs: list[dict], page: int):
-
     total = len(specs)
     pages = max(1, math.ceil(total / PAGE_SIZE))
-    page = max(1, min(page, pages))
 
-    start = (page - 1) * PAGE_SIZE
+    page = max(1, min(page, pages))
+    start = (page-1)*PAGE_SIZE
     end = start + PAGE_SIZE
     chunk = specs[start:end]
 
-    lines = [f"📋 <b>Список специалистов</b> (стр. {page}/{pages}, всего {total})\n"]
-
-    for idx, s in enumerate(chunk, start=start + 1):
-        full_name = html.escape(s.get("full_name") or "-")
-        username = html.escape(s.get("username") or "-")
-        cats = ", ".join(s.get("categories") or [])
-
-        lines.append(
-            f"<b>{idx}.</b> {full_name}\n"
-            f"🔹 <code>{cats or '—'}</code>"
-        )
-
-    text = "\n".join(lines)
+    lines = [f"📋 <b>Список специалистов</b> ({page}/{pages})\n"]
 
     buttons = []
 
-    # кнопки "Открыть"
     for s in chunk:
+        full_name = html.escape(s["full_name"] or "-")
+        cats = ", ".join(s.get("categories") or [])
         buttons.append([
             InlineKeyboardButton(
-                text=f"📄 {html.escape(s.get('full_name') or '-')}",
+                text=f"📄 {full_name}",
                 callback_data=f"spec_view:{s['tg_user_id']}"
             )
         ])
+        lines.append(f"<b>{full_name}</b>\n<code>{cats}</code>\n")
 
-    # Навигация
     nav = []
     if page > 1:
-        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"spec_list:{page - 1}"))
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"spec_list:{page-1}"))
     if page < pages:
-        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"spec_list:{page + 1}"))
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"spec_list:{page+1}"))
     if nav:
         buttons.append(nav)
 
-    return text, InlineKeyboardMarkup(inline_keyboard=buttons)
+    return "\n".join(lines), InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-# -------------------- КАРТОЧКА СПЕЦИАЛИСТА --------------------
+# -------------------- КАРТОЧКА --------------------
 
 @router.callback_query(F.data.startswith("spec_view:"))
-async def view_spec_card(c: CallbackQuery):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа", show_alert=True)
-
-    _, tg_id_str = c.data.split(":")
-    tg_id = int(tg_id_str)
-
+async def spec_view(c: CallbackQuery):
+    tg_id = int(c.data.split(":")[1])
     spec = await get_specialist_with_categories(tg_id)
+
     if not spec:
         return await c.message.edit_text("❌ Специалист не найден")
 
-    full_name = html.escape(spec.get("full_name") or "-")
-    username = html.escape(spec.get("username") or "-")
-    cats = ", ".join(spec.get("categories") or [])
+    full_name = html.escape(spec["full_name"] or "-")
+    username = html.escape(spec["username"] or "-")
+    cats = ", ".join(spec["categories"] or [])
 
     text = (
-        "📄 <b>Карточка специалиста</b>\n\n"
-        f"👤 <b>ФИО:</b> {full_name}\n"
-        f"💬 <b>username:</b> @{username}\n"
-        f"🆔 <b>tg_id:</b> <code>{tg_id}</code>\n"
-        f"📚 <b>Категории:</b> <code>{cats or '—'}</code>\n"
+        f"📄 <b>Карточка специалиста</b>\n\n"
+        f"👤 {full_name}\n"
+        f"💬 @{username}\n"
+        f"🆔 <code>{tg_id}</code>\n"
+        f"📚 {cats or '—'}"
     )
 
     kb = InlineKeyboardMarkup(
@@ -362,7 +305,7 @@ async def view_spec_card(c: CallbackQuery):
             [InlineKeyboardButton(text="✏️ Редактировать ФИО", callback_data=f"spec_edit:{tg_id}")],
             [
                 InlineKeyboardButton(text="🔗 Каналы", callback_data=f"spec_invite:{tg_id}"),
-                InlineKeyboardButton(text="📤 Отправить ссылки", callback_data=f"spec_notify:{tg_id}")
+                InlineKeyboardButton(text="📤 ЛС", callback_data=f"spec_notify:{tg_id}")
             ],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="spec_back_to_list")]
         ]
@@ -370,129 +313,61 @@ async def view_spec_card(c: CallbackQuery):
 
     await c.message.edit_text(text, reply_markup=kb)
     await c.answer()
-    
+
+
+# -------------------- РЕДАКТИРОВАНИЕ ФИО --------------------
 
 @router.callback_query(F.data.startswith("spec_edit:"))
 async def spec_edit_cb(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа")
+    tg_id = int(c.data.split(":")[1])
+    spec = await get_specialist_with_categories(tg_id)
 
-    _, tg_id_str = c.data.split(":")
-    tg_id = int(tg_id_str)
-
-    # имитируем команду /edit_spec tg_id
     await state.clear()
     await state.update_data(mode="edit", tg_id=tg_id)
 
-    spec = await get_specialist_with_categories(tg_id)
-    if not spec:
-        return await c.message.edit_text("❌ Специалист не найден")
-
     await state.update_data(
-        full_name=spec.get("full_name"),
-        username=spec.get("username"),
-        categories=spec.get("categories") or [],
+        full_name=spec["full_name"],
+        username=spec["username"],
+        categories=spec["categories"],
     )
 
     await state.set_state(NewSpecForm.WaitingForFullName)
 
     await c.message.edit_text(
-        f"✏️ <b>Редактирование специалиста</b>\n\n"
-        f"Текущее ФИО: <code>{html.escape(spec.get('full_name') or '-')}</code>\n\n"
-        "Введите новое ФИО:",
-        parse_mode="HTML"
+        f"✏️ Редактирование ФИО\n\n"
+        f"Текущее: <code>{html.escape(spec['full_name'])}</code>\n\n"
+        f"Введите новое ФИО:"
     )
     await c.answer()
-    
-@router.callback_query(F.data.startswith("spec_categories:"))
-async def spec_categories_cb(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа")
 
-    _, tg_id_str = c.data.split(":")
-    tg_id = int(tg_id_str)
 
-    spec = await get_specialist_with_categories(tg_id)
-    if not spec:
-        return await c.message.edit_text("❌ Специалист не найден")
+# -------------------- РЕДАКТИРОВАНИЕ КАТЕГОРИЙ --------------------
 
-    # сохраняем в FSM
-    await state.clear()
-    await state.update_data(tg_id=tg_id, categories=spec.get("categories") or [])
-
-    text = (
-        f"📚 <b>Категории специалиста</b>\n\n"
-        f"ФИО: <code>{html.escape(spec.get('full_name') or '-')}</code>\n"
-        f"Выберите категории:"
-    )
-
-    from .keyboards import categories_kb  # на всякий случай
-
-    kb = categories_kb(selected=spec.get("categories") or [], save_callback="spec_categories_save")
-
-    await c.message.edit_text(text, reply_markup=kb)
-    await c.answer()
-    
 @router.callback_query(F.data.startswith("spec_cat:open:"))
 async def spec_cat_open(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа", show_alert=True)
-
-    _, _, tg_id_str = c.data.split(":")
-    tg_id = int(tg_id_str)
+    tg_id = int(c.data.split(":")[2])
 
     spec = await get_specialist_with_categories(tg_id)
-    if not spec:
-        return await c.message.edit_text("❌ Специалист не найден")
 
     await state.clear()
-    await state.update_data(tg_id=tg_id, categories=spec.get("categories") or [])
+    await state.update_data(tg_id=tg_id, categories=spec["categories"])
 
-    text = (
-        "📚 <b>Изменение категорий специалиста</b>\n\n"
-        f"👤 <b>{html.escape(spec.get('full_name') or '-')}</b>\n"
-        "Выберите категории:"
+    kb = categories_kb(selected=spec["categories"], mode="edit")
+
+    await c.message.edit_text(
+        f"📚 Редактирование категорий\n"
+        f"<b>{html.escape(spec['full_name'])}</b>",
+        reply_markup=kb
     )
-
-    kb = categories_kb(selected=spec.get("categories") or [], mode="edit")
-
-    await c.message.edit_text(text, reply_markup=kb)
     await c.answer()
+
 
 @router.callback_query(F.data.startswith("spec_cat:toggle:"))
 async def spec_cat_toggle(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа")
-
-    parts = c.data.split(":")
-    code = parts[2]  # LAW / ACCOUNTING / EGOV
+    cat = c.data.split(":")[2]
 
     data = await state.get_data()
-    selected = data.get("categories", [])
-
-    if code in selected:
-        selected.remove(code)
-    else:
-        selected.append(code)
-
-    await state.update_data(categories=selected)
-
-    from .keyboards import categories_kb
-    kb = categories_kb(selected=selected, mode="edit")
-
-    await c.message.edit_reply_markup(reply_markup=kb)  # <-- ВАЖНО!
-    await c.answer()
-
-
-@router.callback_query(F.data.startswith("spec_categories:cat:"))
-async def spec_categories_toggle(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа")
-
-    data = await state.get_data()
-    selected = data.get("categories", [])
-
-    _, _, cat = c.data.split(":", 2)
+    selected = data["categories"]
 
     if cat in selected:
         selected.remove(cat)
@@ -501,134 +376,130 @@ async def spec_categories_toggle(c: CallbackQuery, state: FSMContext):
 
     await state.update_data(categories=selected)
 
-    from .keyboards import categories_kb
-
-    await c.message.edit_reply_markup(categories_kb(selected, save_callback="spec_categories_save"))
+    kb = categories_kb(selected, mode="edit")
+    await c.message.edit_reply_markup(reply_markup=kb)
     await c.answer()
 
-@router.callback_query(F.data == "spec_categories_save")
-async def spec_categories_save(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа")
 
-    data = await state.get_data()
-    tg_id = data["tg_id"]
-    categories = data.get("categories", [])
-
-    await set_specialist_categories(tg_id, categories)
-
-    cats_str = ", ".join(categories) if categories else "—"
-
-    await state.clear()
-
-    await c.message.edit_text(
-        f"✅ Категории обновлены.\n\n"
-        f"Новые категории: <code>{cats_str}</code>",
-        parse_mode="HTML",
-        reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"spec_view:{tg_id}")]
-            ]
-        )
-    )
-    await c.answer()
-    
 @router.callback_query(F.data == "spec_cat:save")
 async def spec_cat_save(c: CallbackQuery, state: FSMContext):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа")
-
     data = await state.get_data()
     tg_id = data["tg_id"]
-    categories = data.get("categories", [])
+    categories = data["categories"]
 
     await set_specialist_categories(tg_id, categories)
-
     await state.clear()
-
-    cats_str = ", ".join(categories) if categories else "—"
 
     await c.message.edit_text(
-        f"✅ Категории обновлены.\n\nНовые категории: <code>{cats_str}</code>",
-        parse_mode="HTML",
+        f"✅ Категории обновлены:\n<code>{', '.join(categories)}</code>",
         reply_markup=InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"spec_view:{tg_id}")]
-            ]
+            inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data=f"spec_view:{tg_id}")]]
         )
     )
-
     await c.answer()
-    
+
+
 @router.callback_query(F.data == "spec_cat:cancel")
 async def spec_cat_cancel(c: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    tg_id = data.get("tg_id")
-
+    tg_id = (await state.get_data()).get("tg_id")
     await state.clear()
-
     await c.message.edit_text("❌ Отменено", reply_markup=InlineKeyboardMarkup(
         inline_keyboard=[[InlineKeyboardButton(text="⬅️ Назад", callback_data=f"spec_view:{tg_id}")]]
     ))
     await c.answer()
 
 
-@router.callback_query(F.data.startswith("spec_invite:"))
-async def spec_invite_cb(c: CallbackQuery):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа")
+# -------------------- ССЫЛКИ В ЧАТЫ / ЛИЧКА --------------------
 
-    _, tg_id_str = c.data.split(":")
-    tg_id = int(tg_id_str)
+@router.message(Command("invite_spec"))
+async def invite_spec_cmd(m: Message, command: CommandObject):
+    if not is_admin(m.from_user.id):
+        return
 
-    # просто вызвать существующую логику
+    if not command.args:
+        return await m.answer("Использование: /invite_spec tg_id")
+
+    tg_id = int(command.args)
     spec = await get_specialist_with_categories(tg_id)
-    if not spec:
-        return await c.message.edit_text("❌ Специалист не найден")
 
     lines = []
     for cat in spec["categories"]:
         chat_id = CATEGORY_TO_CHANNEL.get(cat)
-        if not chat_id:
-            continue
-        invite = await c.bot.create_chat_invite_link(chat_id)
-        lines.append(f"{cat}: {invite.invite_link}")
+        if chat_id:
+            link = await m.bot.create_chat_invite_link(chat_id)
+            lines.append(f"{cat}: {link.invite_link}")
 
-    text = (
-        f"🔗 <b>Ссылки для специалиста</b>\n\n" + "\n".join(lines)
-        if lines else "❌ Не удалось создать ссылки."
-    )
+    await m.answer("\n".join(lines) if lines else "❌ Невозможно создать ссылки")
 
-    await c.message.edit_text(text)
-    await c.answer()
 
-@router.callback_query(F.data.startswith("spec_notify:"))
-async def spec_notify_cb(c: CallbackQuery):
-    if not is_admin(c.from_user.id):
-        return await c.answer("Нет доступа")
+@router.message(Command("notify_spec"))
+async def notify_spec_cmd(m: Message, command: CommandObject):
+    if not is_admin(m.from_user.id):
+        return
 
-    _, tg_id_str = c.data.split(":")
-    tg_id = int(tg_id_str)
+    if not command.args:
+        return await m.answer("Использование: /notify_spec tg_id")
 
+    tg_id = int(command.args)
     spec = await get_specialist_with_categories(tg_id)
-    if not spec:
-        return await c.message.edit_text("❌ Специалист не найден")
 
     links = []
     for cat in spec["categories"]:
         chat_id = CATEGORY_TO_CHANNEL.get(cat)
         if chat_id:
-            invite = await c.bot.create_chat_invite_link(chat_id)
-            links.append(f"{cat}: {invite.invite_link}")
+            link = await m.bot.create_chat_invite_link(chat_id)
+            links.append(f"{cat}: {link.invite_link}")
+
+    try:
+        await m.bot.send_message(
+            tg_id,
+            "Ваши категории и каналы:\n" + "\n".join(links)
+        )
+        await m.answer("Отправлено")
+    except TelegramForbiddenError:
+        await m.answer("❌ Специалист не открыл бота")
+
+
+@router.callback_query(F.data.startswith("spec_invite:"))
+async def spec_invite_cb(c: CallbackQuery):
+    tg_id = int(c.data.split(":")[1])
+    spec = await get_specialist_with_categories(tg_id)
+
+    lines = []
+    for cat in spec["categories"]:
+        chat_id = CATEGORY_TO_CHANNEL.get(cat)
+        if chat_id:
+            link = await c.bot.create_chat_invite_link(chat_id)
+            lines.append(f"{cat}: {link.invite_link}")
+
+    await c.message.edit_text(
+        "🔗 Ссылки:\n" + "\n".join(lines) if lines else "❌ Не удалось создать ссылки"
+    )
+    await c.answer()
+
+
+@router.callback_query(F.data.startswith("spec_notify:"))
+async def spec_notify_cb(c: CallbackQuery):
+    tg_id = int(c.data.split(":")[1])
+    spec = await get_specialist_with_categories(tg_id)
+
+    links = []
+    for cat in spec["categories"]:
+        chat_id = CATEGORY_TO_CHANNEL.get(cat)
+        if chat_id:
+            link = await c.bot.create_chat_invite_link(chat_id)
+            links.append(f"{cat}: {link.invite_link}")
 
     try:
         await c.bot.send_message(
             tg_id,
-            "👋 Вас добавили как специалиста:\n\n" + "\n".join(links)
+            "Ваши ссылки:\n" + "\n".join(links)
         )
-        await c.message.edit_text("✅ Отправлено в ЛС специалисту")
+        await c.message.edit_text("Отправлено")
     except TelegramForbiddenError:
         await c.message.edit_text("❌ Специалист не открыл бота")
+
+    await c.answer()
 
 
 @router.callback_query(F.data == "spec_back_to_list")
@@ -646,7 +517,7 @@ async def main():
 
     bot = Bot(
         token=settings.ADMIN_BOT_TOKEN,
-        default=DefaultBotProperties(parse_mode="HTML"),
+        default=DefaultBotProperties(parse_mode="HTML")
     )
     dp = Dispatcher(storage=MemoryStorage())
     dp.include_router(router)
