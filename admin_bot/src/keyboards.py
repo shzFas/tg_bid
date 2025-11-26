@@ -1,6 +1,5 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-
 CATEGORIES = [
     ("ACCOUNTING", "📊 Бухгалтерия"),
     ("LAW", "⚖️ Юрист"),
@@ -8,21 +7,24 @@ CATEGORIES = [
 ]
 
 
-def categories_kb(selected: list[str]) -> InlineKeyboardMarkup:
+def categories_kb(selected: list[str], mode: str = "new") -> InlineKeyboardMarkup:
     """
-    Клавиатура с переключателями категорий + сохранить/отмена.
-    selected – список уже выбранных кодов категорий.
+    Универсальная клавиатура категорий.
+    mode = "new" → new_spec:*
+    mode = "edit" → spec_cat:*
     """
+    prefix = "new_spec" if mode == "new" else "spec_cat"
+
     rows: list[list[InlineKeyboardButton]] = []
 
     # категории
     row: list[InlineKeyboardButton] = []
     for code, label in CATEGORIES:
-        prefix = "✅ " if code in selected else "☑️ "
+        check = "✅ " if code in selected else "☑️ "
         row.append(
             InlineKeyboardButton(
-                text=prefix + label,
-                callback_data=f"new_spec:cat:{code}",
+                text=check + label,
+                callback_data=f"{prefix}:toggle:{code}",
             )
         )
         if len(row) == 2:
@@ -35,12 +37,12 @@ def categories_kb(selected: list[str]) -> InlineKeyboardMarkup:
     rows.append(
         [
             InlineKeyboardButton(
-                text="✅ Сохранить",
-                callback_data="new_spec:save",
+                text="💾 Сохранить",
+                callback_data=f"{prefix}:save",
             ),
             InlineKeyboardButton(
                 text="❌ Отмена",
-                callback_data="new_spec:cancel",
+                callback_data=f"{prefix}:cancel",
             ),
         ]
     )
