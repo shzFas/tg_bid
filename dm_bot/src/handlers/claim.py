@@ -1,7 +1,6 @@
-from aiogram import Router, F, Bot
+from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.exceptions import TelegramForbiddenError
-from aiogram.client.default import DefaultBotProperties
 
 from ..config import settings
 from ..db import get_request_by_message_id, set_status_in_progress
@@ -13,7 +12,7 @@ router = Router()
 async def claim_request(c: CallbackQuery):
     msg_id = c.message.message_id
 
-    # Всегда загружаем из БД – актуальная заявка по текущему message_id
+    # Всегда грузим заявку из БД по текущему message_id
     req = await get_request_by_message_id(msg_id)
     if not req:
         return await c.answer(
@@ -24,24 +23,19 @@ async def claim_request(c: CallbackQuery):
     user = c.from_user
     uname = user.username or user.full_name or str(user.id)
 
-    # Уже в работе у кого-то другого
+    # Уже в работе у другого
     if req.get("claimer_user_id") and req["claimer_user_id"] != user.id:
         return await c.answer(
-            f"Заявку уже взял @{req['claimer_username']}.",
+            f"Заявка уже у @{req['claimer_username']}.",
             show_alert=True,
         )
 
-    # Помечаем заявку как «в работе»
+    # Помечаем как «в работе»
     await set_status_in_progress(msg_id, user.id, uname)
 
-    # Отправляем карточку заявки в ЛС через dm_bot
-    dm_bot = Bot(
-        token=settings.BOT2_TOKEN,
-        default=DefaultBotProperties(parse_mode="HTML"),
-    )
-
+    # Отправляем карточку самому специалисту (этот же бот)
     try:
-        await dm_bot.send_message(
+        await c.bot.send_message(
             chat_id=user.id,
             text=(
                 "🆕 <b>Вы приняли заявку!</b>\n\n"
@@ -51,16 +45,15 @@ async def claim_request(c: CallbackQuery):
                 f"📚 Категория: {req['category']}\n"
                 f"📝 {req['description']}"
             ),
+            parse_mode="HTML",
         )
     except TelegramForbiddenError:
         return await c.answer(
-            f"Открой @{settings.BOT2_USERNAME} и нажми /start!",
+            "Я не могу написать вам в личку. Разблокируйте бота и нажмите /start.",
             show_alert=True,
         )
-    finally:
-        await dm_bot.session.close()
 
-    # Обновляем сообщение в канале
+    # Красим сообщение в канале
     try:
         await c.message.edit_text(
             f"✅ Заявка принята @{uname}\n\n{c.message.text}"
