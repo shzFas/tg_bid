@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     CHANNEL_LAW_ID: int
     CHANNEL_EGOV_ID: int
     OPERATOR_CHAT_ID: int
+    
+    CATEGORY_ACCOUNTING_NAME: str
+    CATEGORY_LAW_NAME: str
+    CATEGORY_EGOV_NAME: str
 
     BOT2_USERNAME: str | None = None
     SHARED_SECRET: str | None = None
@@ -27,4 +31,10 @@ CATEGORY_TO_CHANNEL = {
     "ACCOUNTING": settings.CHANNEL_ACCOUNTING_ID,
     "LAW": settings.CHANNEL_LAW_ID,
     "EGOV": settings.CHANNEL_EGOV_ID,
+}
+
+CATEGORY_H = {
+    "ACCOUNTING": settings.CATEGORY_ACCOUNTING_NAME,
+    "LAW": settings.CATEGORY_LAW_NAME,
+    "EGOV": settings.CATEGORY_EGOV_NAME,
 }
