@@ -48,3 +48,14 @@ def categories_kb(selected: list[str], mode: str = "new") -> InlineKeyboardMarku
     )
 
     return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def claim_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔘 Принять в работу", callback_data="req:claim")]
+    ])
+
+def admin_menu_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="👨‍⚕️ Специалисты", callback_data="admin:specs")],
+        [InlineKeyboardButton(text="📄 Заявки", callback_data="admin:requests")],   # ← ВОТ ЭТО
+    ])

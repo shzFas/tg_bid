@@ -67,6 +67,21 @@ async def init_db() -> None:
             """
         )
 
+async def set_status_in_progress(message_id: int, tg_user_id: int, username: str):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE requests
+            SET claimer_user_id = $1,
+                claimer_username = $2,
+                status = 'IN_PROGRESS'
+            WHERE message_id = $3
+            """,
+            tg_user_id,
+            username,
+            message_id,
+        )
 
 # -----------------------
 # FUNCTIONS: specialists
@@ -185,4 +200,73 @@ async def get_specialist_with_categories(tg_user_id: int) -> Optional[Dict[str, 
         d["categories"] = cats
         return d
 
+async def get_request_by_message_id(message_id: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM requests WHERE message_id = $1;", message_id
+        )
+        return dict(row) if row else None
 
+async def update_request(req_id: int, data: dict) -> bool:
+    """
+    data = {"description": "...", "city": "...", "phone": "..."}
+    """
+    if not data:
+        return False
+
+    fields = []
+    values = []
+    idx = 1
+    for k, v in data.items():
+        fields.append(f"{k} = ${idx}")
+        values.append(v)
+        idx += 1
+
+    query = f"UPDATE requests SET {', '.join(fields)} WHERE id = ${idx};"
+    values.append(req_id)
+
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(query, *values)
+        return True
+
+# src/db.py
+
+async def get_requests_page(page: int, size: int):
+    pool = await get_pool()
+    offset = (page - 1) * size
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT id, name, city, message_id
+            FROM requests
+            ORDER BY created_at DESC
+            LIMIT $1 OFFSET $2;
+            """,
+            size, offset
+        )
+
+        total = await conn.fetchval("SELECT COUNT(*) FROM requests;")
+        return [dict(r) for r in rows], total
+
+async def reset_to_pending(req_id: int) -> None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE requests
+            SET claimer_user_id = NULL,
+                claimer_username = NULL
+            WHERE id = $1;
+            """,
+            req_id
+        )
+        
+async def delete_request_by_id(request_id: int):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "DELETE FROM requests WHERE id = $1", request_id
+        )

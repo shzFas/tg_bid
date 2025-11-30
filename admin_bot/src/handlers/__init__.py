@@ -8,6 +8,9 @@ from .list_specs import register_list_handlers
 from .categories import register_categories_handlers
 from .spec_view import router as router_spec_view
 from .spec_categories import router as router_categories
+from .edit_request import router as router_edit_request
+from .list_requests import router as router_list_requests
+from .claim import router as router_claim
 from .invite import router as router_invite
 
 def register_all_handlers(dp: Dispatcher):
@@ -22,3 +25,6 @@ def register_all_handlers(dp: Dispatcher):
     dp.include_router(router_spec_view)
     dp.include_router(router_categories)
     dp.include_router(router_invite)
+    dp.include_router(router_edit_request)
+    dp.include_router(router_list_requests)
+    dp.include_router(router_claim)
