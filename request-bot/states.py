@@ -1,8 +1,8 @@
 from aiogram.fsm.state import State, StatesGroup
 
-class RequestForm(StatesGroup):
+class ReqForm(StatesGroup):
     phone = State()
     name = State()
     city = State()
-    description = State()
-    specialization = State()  # category
+    desc = State()
+    category = State()
