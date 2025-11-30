@@ -53,19 +53,19 @@ async def get_claimed_requests(tg_id: int, page: int, page_size: int):
     await conn.close()
     return rows, total_pages
 
-async def cancel_request(req_id: int, tg_id: int) -> bool:
+async def cancel_request(req_id: int, tg_id: int, note: str | None) -> bool:
     conn = await asyncpg.connect(DATABASE_URL)
     res = await conn.execute("""
         UPDATE requests SET
             status='PENDING',
             claimed_by_id=NULL,
             claimed_by_username=NULL,
-            claimed_at=NULL
+            claimed_at=NULL,
+            cancel_note=$3
         WHERE id=$1 AND claimed_by_id=$2
-    """, req_id, tg_id)
+    """, req_id, tg_id, note)
     await conn.close()
     return res == "UPDATE 1"
-
 
 async def complete_request(req_id: int, tg_id: int) -> bool:
     conn = await asyncpg.connect(DATABASE_URL)
@@ -78,4 +78,29 @@ async def complete_request(req_id: int, tg_id: int) -> bool:
     await conn.close()
     return res == "UPDATE 1"
 
+async def get_request_data(req_id: int) -> dict | None:
+    """Получить все данные заявки — нужно для редактирования в канале"""
+    conn = await asyncpg.connect(DATABASE_URL)
+    row = await conn.fetchrow("""
+        SELECT * FROM requests
+        WHERE id=$1
+    """, req_id)
+    await conn.close()
+    return dict(row) if row else None
 
+async def save_cancel_note(req_id: int, tg_id: int, note: str | None) -> bool:
+    """
+    Отмена заявки: сохраняем cancel_note + возвращаем в PENDING.
+    """
+    conn = await asyncpg.connect(DATABASE_URL)
+    res = await conn.execute("""
+        UPDATE requests SET
+            status='PENDING',
+            claimed_by_id=NULL,
+            claimed_by_username=NULL,
+            claimed_at=NULL,
+            cancel_note=$3
+        WHERE id=$1 AND claimed_by_id=$2
+    """, req_id, tg_id, note)
+    await conn.close()
+    return res == "UPDATE 1"

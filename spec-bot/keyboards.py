@@ -1,4 +1,7 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import (
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton
+)
 
 SPECIALIZATIONSBTN = ["ACCOUNTING", "LAW", "EGOV"]
 
@@ -15,22 +18,21 @@ def phone_kb():
 def spec_multi_kb(selected: list[str]):
     kb = []
     for spec in SPECIALIZATIONSBTN:
-        check = "✔" if spec in selected else " "
-        kb.append([InlineKeyboardButton(text=f"{check} {spec}", callback_data=f"toggle:{spec}")])
+        check = "✔" if spec in selected else "▫"
+        kb.append([
+            InlineKeyboardButton(text=f"{check} {spec}", callback_data=f"toggle:{spec}")
+        ])
 
-    kb.append([InlineKeyboardButton(text="🟢 Готово", callback_data="done")])
+    kb.append([InlineKeyboardButton(text="🟢 Готово", callback_data="done_specs")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
-def cancel_request_kb(request_id: int):
+def request_action_kb(req_id: int):
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="❌ Отменить заявку", callback_data=f"cancel:{request_id}")]
+        [InlineKeyboardButton(text="✔ Выполнено", callback_data=f"done:{req_id}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel:{req_id}")]
     ])
-    
-def done_request_kb(req_id: int, cancel: bool = True):
-    kb = [
-        [InlineKeyboardButton(text="✔ Выполнено", callback_data=f"done:{req_id}")]
-    ]
-    if cancel:
-        kb.append([InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel:{req_id}")])
 
-    return InlineKeyboardMarkup(inline_keyboard=kb)
+def cancel_request_kb(req_id: int):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отменить заявку", callback_data=f"cancel:{req_id}")]
+    ])
