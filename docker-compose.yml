@@ -1,0 +1,59 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: tg_bid
+    ports:
+      - "8888:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+  admin-server:
+    build: ./admin-server
+    env_file: .env
+    depends_on:
+      - db
+    ports:
+      - "5000:5000"
+
+  admin-client:
+    build: ./admin-client
+    env_file: .env
+    depends_on:
+      - admin-server
+    ports:
+      - "3000:3000"
+
+  spec-bot:
+    build: ./spec-bot
+    env_file: .env
+    depends_on:
+      - db
+
+  request-bot:
+    build: ./request-bot
+    env_file: .env
+    depends_on:
+      - db
+
+volumes:
+  db_data:
+  pgadmin_data:
