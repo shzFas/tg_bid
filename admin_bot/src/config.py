@@ -4,6 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     ADMIN_BOT_TOKEN: str
+    DM_BOT_TOKEN: str
     DATABASE_URL: str
     ADMIN_IDS: str
     TZ: str | None = None
