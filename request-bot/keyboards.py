@@ -21,3 +21,18 @@ def claim_kb(req_id: int):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🛠 Взять в работу", callback_data=f"claim:{req_id}")]
     ])
+    
+def confirm_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✔ Все верно", callback_data="confirm:send")],
+        [InlineKeyboardButton(text="✏ Изменить", callback_data="confirm:edit")]
+    ])
+
+def edit_field_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📞 Телефон", callback_data="edit:phone")],
+        [InlineKeyboardButton(text="👤 Имя", callback_data="edit:name")],
+        [InlineKeyboardButton(text="🏙 Город", callback_data="edit:city")],
+        [InlineKeyboardButton(text="📝 Описание", callback_data="edit:desc")],
+        [InlineKeyboardButton(text="📌 Категория", callback_data="edit:cat")],
+    ])
