@@ -1,12 +1,14 @@
-import React from 'react';
-import AppRouter from './router';
+import { Box } from "@mui/material";
+import AppRouter from "./router";
+import Sidebar from "./components/Sidebar";
 
-function App() {
+export default function App() {
   return (
-    <>
-      <AppRouter/>
-    </>
+    <Box sx={{ display: "flex" }}>
+      <Sidebar />
+      <Box sx={{ flexGrow: 1, p: 2 }}>
+        <AppRouter />
+      </Box>
+    </Box>
   );
 }
-
-export default App;
