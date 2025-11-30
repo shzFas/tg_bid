@@ -2,6 +2,7 @@ import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
 import requestsRouter from "./routes/requests";
+import specialistsRouter from "./routes/specialists";
 
 dotenv.config();
 const app = express();
@@ -12,6 +13,7 @@ app.use(express.json());
 
 // API
 app.use("/api/requests", requestsRouter);
+app.use("/api/specialists", specialistsRouter);
 
 app.listen(PORT, () => {
   console.log(`🚀 Admin server running on port ${PORT}`);

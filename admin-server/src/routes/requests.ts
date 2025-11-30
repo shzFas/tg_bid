@@ -1,10 +1,10 @@
 import { Router } from "express";
 import {
-  getRequests,
-  getRequest,
-  createNewRequest,
-  updateExistingRequest,
-  deleteExistingRequest
+    getRequests,
+    getRequest,
+    createNewRequest,
+    updateExistingRequest,
+    deleteExistingRequest
 } from "../controllers/requestsController";
 
 const router = Router();
