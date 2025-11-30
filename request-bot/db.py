@@ -130,7 +130,8 @@ async def cancel_request(req_id: int, tg_id: int) -> bool:
     conn = await asyncpg.connect(DATABASE_URL)
     res = await conn.execute("""
         UPDATE requests
-        SET status = 'PENDING',
+        SET status = 'CANCELED',
+            canceled_at = NOW(),
             claimed_by_id = NULL,
             claimed_by_username = NULL,
             claimed_at = NULL

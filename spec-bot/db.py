@@ -57,11 +57,12 @@ async def cancel_request(req_id: int, tg_id: int, note: str | None) -> bool:
     conn = await asyncpg.connect(DATABASE_URL)
     res = await conn.execute("""
         UPDATE requests SET
-            status='PENDING',
+            status='CANCELED',
             claimed_by_id=NULL,
             claimed_by_username=NULL,
             claimed_at=NULL,
-            cancel_note=$3
+            cancel_note=$3,
+            canceled_at=NOW()
         WHERE id=$1 AND claimed_by_id=$2
     """, req_id, tg_id, note)
     await conn.close()
@@ -95,7 +96,8 @@ async def save_cancel_note(req_id: int, tg_id: int, note: str | None) -> bool:
     conn = await asyncpg.connect(DATABASE_URL)
     res = await conn.execute("""
         UPDATE requests SET
-            status='PENDING',
+            status='RESEND',
+            resend_at=NOW(),
             claimed_by_id=NULL,
             claimed_by_username=NULL,
             claimed_at=NULL,
