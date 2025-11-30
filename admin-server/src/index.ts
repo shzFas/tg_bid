@@ -1,16 +1,18 @@
 import express from "express";
 import dotenv from "dotenv";
-import { pool } from "./db.js";
+import cors from "cors";
+import requestsRouter from "./routes/requests";
 
 dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
-app.get("/", (_, res) => {
-  res.send("Server is running 🔥");
-});
+app.use(cors());
+app.use(express.json());
+
+// API
+app.use("/api/requests", requestsRouter);
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Admin server running on port ${PORT}`);
 });
