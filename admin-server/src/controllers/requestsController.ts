@@ -83,20 +83,51 @@ export async function updateExistingRequest(req: Request, res: Response) {
 }
 
 export async function deleteExistingRequest(req: Request, res: Response) {
-    try {
-        const id = Number(req.params.id);
-        const result = await deleteRequest(id);
+  try {
+    const id = Number(req.params.id);
 
-        if (!result) {
-            return error(res, "REQUEST_NOT_FOUND", "Заявка не найдена", 404);
-        }
-
-        return ok(res, { id });
-
-    } catch (err) {
-        return error(res, "DELETE_FAILED", "Ошибка удаления заявки", 500);
+    // 1) Получаем заявку перед удалением
+    const oldReq = await getRequestById(id);
+    if (!oldReq) {
+      return error(res, "REQUEST_NOT_FOUND", "Заявка не найдена", 404);
     }
+
+    const botToken = process.env.REQUEST_BOT_TOKEN;
+    const chatId = oldReq.tg_chat_id;
+    const msgId = oldReq.tg_message_id;
+
+    // 2) Удаляем сообщение в Telegram, если есть
+    if (chatId && msgId) {
+      try {
+        await axios.post(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+          chat_id: chatId,
+          message_id: msgId,
+        });
+      } catch (err) {
+        console.error("Ошибка удаления сообщения в Telegram:", err?.response?.data);
+        // продолжаем — даже если в Telegram ошибка, удаление в БД всё равно идёт
+      }
+    }
+
+    // 3) Удаляем из базы
+    const result = await deleteRequest(id);
+
+    if (!result) {
+      return error(res, "DELETE_FAILED", "Не удалось удалить заявку", 500);
+    }
+
+    // 4) Отдаём успешный ответ
+    return ok(res, {
+      id,
+      telegram: chatId && msgId ? "deleted" : "not_found",
+    });
+
+  } catch (err) {
+    console.error(err);
+    return error(res, "DELETE_FAILED", "Ошибка удаления заявки", 500);
+  }
 }
+
 
 export async function createAndPublish(req: Request, res: Response) {
     try {
