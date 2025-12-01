@@ -32,23 +32,26 @@ async def get_specialist_id(tg_id: int) -> int | None:
     await conn.close()
     return row["id"] if row else None
 
+ACTIVE_STATUSES = ('CLAIMED', 'RESEND')
 
 async def get_claimed_requests(tg_id: int, page: int, page_size: int):
     conn = await asyncpg.connect(DATABASE_URL)
 
+    # считаем только активные заявки
     total = await conn.fetchval("""
-        SELECT COUNT(*) FROM requests WHERE claimed_by_id = $1
-    """, tg_id)
-    total_pages = max(1, (total + page_size - 1) // page_size)
+        SELECT COUNT(*) FROM requests 
+        WHERE claimed_by_id = $1 AND status = ANY($2::text[])
+    """, tg_id, ACTIVE_STATUSES)
 
+    total_pages = max(1, (total + page_size - 1) // page_size)
     offset = (page - 1) * page_size
 
     rows = await conn.fetch("""
         SELECT * FROM requests
-        WHERE claimed_by_id = $1
+        WHERE claimed_by_id = $1 AND status = ANY($2::text[])
         ORDER BY claimed_at DESC
-        LIMIT $2 OFFSET $3
-    """, tg_id, page_size, offset)
+        LIMIT $3 OFFSET $4
+    """, tg_id, ACTIVE_STATUSES, page_size, offset)
 
     await conn.close()
     return rows, total_pages
@@ -57,11 +60,12 @@ async def cancel_request(req_id: int, tg_id: int, note: str | None) -> bool:
     conn = await asyncpg.connect(DATABASE_URL)
     res = await conn.execute("""
         UPDATE requests SET
-            status='PENDING',
+            status='CANCELED',
             claimed_by_id=NULL,
             claimed_by_username=NULL,
             claimed_at=NULL,
-            cancel_note=$3
+            cancel_note=$3,
+            canceled_at=NOW()
         WHERE id=$1 AND claimed_by_id=$2
     """, req_id, tg_id, note)
     await conn.close()
@@ -79,10 +83,12 @@ async def complete_request(req_id: int, tg_id: int) -> bool:
     return res == "UPDATE 1"
 
 async def get_request_data(req_id: int) -> dict | None:
-    """Получить все данные заявки — нужно для редактирования в канале"""
     conn = await asyncpg.connect(DATABASE_URL)
     row = await conn.fetchrow("""
-        SELECT * FROM requests
+        SELECT id, phone, name, city, description, specialization,
+               tg_chat_id, tg_message_id, sent_by_bot, status,
+               claimed_by_id, claimed_at, resend_at, canceled_at
+        FROM requests
         WHERE id=$1
     """, req_id)
     await conn.close()
@@ -95,7 +101,8 @@ async def save_cancel_note(req_id: int, tg_id: int, note: str | None) -> bool:
     conn = await asyncpg.connect(DATABASE_URL)
     res = await conn.execute("""
         UPDATE requests SET
-            status='PENDING',
+            status='RESEND',
+            resend_at=NOW(),
             claimed_by_id=NULL,
             claimed_by_username=NULL,
             claimed_at=NULL,

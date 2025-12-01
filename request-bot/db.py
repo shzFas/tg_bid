@@ -28,7 +28,9 @@ async def save_message_id(req_id: int, message_id: int, channel_id: str):
 
     await conn.execute("""
         UPDATE requests
-        SET tg_message_id=$1, tg_chat_id=$2
+        SET tg_message_id=$1,
+            tg_chat_id=$2,
+            sent_by_bot = 'request'
         WHERE id=$3
     """, str(message_id), str(channel_id), req_id)   # <-- FIX HERE!
 
@@ -68,7 +70,7 @@ async def get_request_data(req_id: int):
     conn = await asyncpg.connect(DATABASE_URL)
     row = await conn.fetchrow("""
         SELECT id, phone, name, city, description, specialization,
-               tg_chat_id, tg_message_id
+               tg_chat_id, tg_message_id, sent_by_bot
         FROM requests
         WHERE id=$1
     """, req_id)
@@ -130,7 +132,8 @@ async def cancel_request(req_id: int, tg_id: int) -> bool:
     conn = await asyncpg.connect(DATABASE_URL)
     res = await conn.execute("""
         UPDATE requests
-        SET status = 'PENDING',
+        SET status = 'CANCELED',
+            canceled_at = NOW(),
             claimed_by_id = NULL,
             claimed_by_username = NULL,
             claimed_at = NULL

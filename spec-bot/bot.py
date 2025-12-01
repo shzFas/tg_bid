@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 
 from dotenv import load_dotenv
+from sender import get_bot_by_sender
 
 from states import SpecReg, CancelNote
 from keyboards import (
@@ -144,9 +145,11 @@ async def save_cancel_note_cb(message: Message, state: FSMContext):
     ok = await save_cancel_note(req_id, message.from_user.id, note)
 
     if ok:
-        # ========== 🔄 ОБНОВЛЕНИЕ КАНАЛА ==========
         req = await get_request_data(req_id)
-        channel_id = req['tg_chat_id']
+        channel_id = req["tg_chat_id"]
+
+        # 👇 ВАЖНО: теперь берем БОТА из БД
+        bot = get_bot_by_sender(req["sent_by_bot"])
 
         text = (
             f"📩 <b>Заявка (ID: {req_id})</b>\n\n"
@@ -158,24 +161,22 @@ async def save_cancel_note_cb(message: Message, state: FSMContext):
         if note != "-":
             text += f"\n⚠️ Причина: <i>{note}</i>\n\n"
 
-        # заново – кнопка взять в работу
-        await request_bot.edit_message_text(
-            text,
+        await bot.edit_message_text(
             chat_id=channel_id,
             message_id=req["tg_message_id"],
+            text=text,
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(
-                    text="⚒ Взять в работу", callback_data=f"claim:{req_id}"
-                )]]
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="⚒ Взять в работу", callback_data=f"claim:{req_id}")]
+                ]
             )
         )
 
         await message.answer("🔄 Заявка отменена и возвращена в канал!")
         await state.clear()
-
     else:
-        await message.answer("❌ Ошибка, заявка не ваша")
+        await message.answer("❌ Ошибка")
 
 
 # ====================== DONE ======================
