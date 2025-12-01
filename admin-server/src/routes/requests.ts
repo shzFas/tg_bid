@@ -4,7 +4,8 @@ import {
     getRequest,
     createNewRequest,
     updateExistingRequest,
-    deleteExistingRequest
+    deleteExistingRequest,
+    createAndPublish
 } from "../controllers/requestsController";
 
 const router = Router();
@@ -14,5 +15,7 @@ router.get("/:id", getRequest);
 router.post("/", createNewRequest);
 router.put("/:id", updateExistingRequest);
 router.delete("/:id", deleteExistingRequest);
+
+router.post("/create-and-publish", createAndPublish);
 
 export default router;

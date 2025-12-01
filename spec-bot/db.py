@@ -83,10 +83,12 @@ async def complete_request(req_id: int, tg_id: int) -> bool:
     return res == "UPDATE 1"
 
 async def get_request_data(req_id: int) -> dict | None:
-    """Получить все данные заявки — нужно для редактирования в канале"""
     conn = await asyncpg.connect(DATABASE_URL)
     row = await conn.fetchrow("""
-        SELECT * FROM requests
+        SELECT id, phone, name, city, description, specialization,
+               tg_chat_id, tg_message_id, sent_by_bot, status,
+               claimed_by_id, claimed_at, resend_at, canceled_at
+        FROM requests
         WHERE id=$1
     """, req_id)
     await conn.close()

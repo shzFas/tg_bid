@@ -5,7 +5,10 @@ import {
     createRequest,
     updateRequest,
     deleteRequest,
+    saveChannelMessage,
+    createRequestInChanel,
 } from "../models/requestsModel";
+import { publishToTelegram } from "../telegram/sender";
 
 export async function getRequests(req: Request, res: Response) {
     res.json(await getAllRequests());
@@ -51,3 +54,24 @@ export async function deleteExistingRequest(req: Request, res: Response) {
     }
 }
 
+export async function createAndPublish(req: Request, res: Response) {
+  try {
+    const data = req.body;
+
+    const newRequest = await createRequestInChanel(data);
+
+    const { message_id, chat_id } = await publishToTelegram(newRequest);
+
+    await saveChannelMessage(newRequest.id, message_id, chat_id, "request");
+
+    return res.status(201).json({
+      success: true,
+      request_id: newRequest.id,
+      tg_message_id: message_id,
+      channel_id: chat_id,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Failed to create & publish" });
+  }
+}
