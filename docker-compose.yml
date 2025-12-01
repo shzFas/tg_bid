@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: tg_bid
     ports:
-      - "8888:5432"
+      - "8881:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
 
