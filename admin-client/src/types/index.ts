@@ -14,3 +14,15 @@ export interface Request {
   tg_message_id?: string;
   cancel_note?: string;
 }
+
+export interface Specialist {
+  id: number;
+  tg_id: string;
+  username: string | null;
+  name: string;
+  phone: string | null;
+  is_approved: boolean;
+  created_at: string;
+  specializations: string[];
+}
+

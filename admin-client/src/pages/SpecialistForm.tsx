@@ -1,72 +1,96 @@
-// src/components/specialists/SpecialistForm.tsx
 import { useState, useEffect } from "react";
 import {
   Dialog, DialogTitle, DialogContent,
   TextField, Button, FormGroup, FormControlLabel,
   Checkbox, Typography
 } from "@mui/material";
+
 import {
   createSpecialist,
   updateSpecialist,
   approveSpecialist
 } from "../api/specialists";
+import { useSnackbar } from "../components/SnackbarProvider";
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  editing?: any;      // если есть → режим редактирования
-  reload: () => void; // обновление таблицы после сохранения
+  editing?: any;
+  reload: () => void;
 }
 
 const ALL_SPECS = ["ACCOUNTING", "LAW", "EGOV"];
 
 export default function SpecialistForm({ open, onClose, editing, reload }: Props) {
+  const { showMessage } = useSnackbar();
+
   const [form, setForm] = useState({
     name: "",
     phone: "",
     tg_id: "",
     username: "",
-    specializations: [] as string[]
+    specializations: [] as string[],
   });
 
-  // ⚡ Автоматически заполняет форму при редактировании
+  // Заполнение формы при открытии
   useEffect(() => {
     if (editing) {
       setForm({
         name: editing.name,
         phone: editing.phone,
-        tg_id: editing?.tg_id,
+        tg_id: editing.tg_id,
         username: editing.username,
-        specializations: editing.specializations || []
+        specializations: editing.specializations || [],
       });
     } else {
-      setForm({ name: "", phone: "", tg_id: "", username: "", specializations: [] });
+      setForm({
+        name: "",
+        phone: "",
+        tg_id: "",
+        username: "",
+        specializations: [],
+      });
     }
-  }, [editing, open]); // при изменении editing или открытии — обновляем
+  }, [editing, open]);
 
   const toggleSpec = (spec: string) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       specializations: prev.specializations.includes(spec)
-        ? prev.specializations.filter(s => s !== spec)
-        : [...prev.specializations, spec]
+        ? prev.specializations.filter((s) => s !== spec)
+        : [...prev.specializations, spec],
     }));
   };
 
+  // SAVE specialist
   const handleSave = async () => {
-    if (editing) {
-      await updateSpecialist(editing.id, form);
-    } else {
-      await createSpecialist(form);
+    try {
+      if (editing) {
+        await updateSpecialist(editing.id, form);
+        showMessage("Специалист обновлён!", "success");
+      } else {
+        await createSpecialist(form);
+        showMessage("Специалист создан!", "success");
+      }
+
+      reload();
+      onClose();
+    } catch (err: any) {
+      showMessage(err.message, "error");
     }
-    reload();
-    onClose();
   };
 
+  // APPROVE specialist
   const handleApprove = async () => {
-    await approveSpecialist(editing!.id);
-    reload();
-    onClose();
+    try {
+      await approveSpecialist(editing!.id);
+      showMessage("Специалист успешно одобрен!", "success");
+
+      reload();
+      onClose();
+    } catch (err: any) {
+      showMessage(err.message, "error");
+    }
   };
 
   return (
@@ -80,7 +104,7 @@ export default function SpecialistForm({ open, onClose, editing, reload }: Props
           fullWidth
           label="Имя"
           value={form.name}
-          onChange={e => setForm({ ...form, name: e.target.value })}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
           margin="dense"
         />
 
@@ -88,15 +112,15 @@ export default function SpecialistForm({ open, onClose, editing, reload }: Props
           fullWidth
           label="Telegram ID (tg_id)"
           value={form.tg_id}
-          onChange={e => setForm({ ...form, tg_id: e.target.value })}
+          onChange={(e) => setForm({ ...form, tg_id: e.target.value })}
           margin="dense"
         />
 
         <TextField
           fullWidth
-          label="Username Telegram (если есть)"
+          label="Username Telegram"
           value={form.username}
-          onChange={e => setForm({ ...form, username: e.target.value })}
+          onChange={(e) => setForm({ ...form, username: e.target.value })}
           margin="dense"
         />
 
@@ -104,13 +128,14 @@ export default function SpecialistForm({ open, onClose, editing, reload }: Props
           fullWidth
           label="Телефон"
           value={form.phone}
-          onChange={e => setForm({ ...form, phone: e.target.value })}
+          onChange={(e) => setForm({ ...form, phone: e.target.value })}
           margin="dense"
         />
 
         <Typography sx={{ mt: 2 }}>Специализации:</Typography>
+
         <FormGroup>
-          {ALL_SPECS.map(spec => (
+          {ALL_SPECS.map((spec) => (
             <FormControlLabel
               key={spec}
               control={
@@ -124,11 +149,12 @@ export default function SpecialistForm({ open, onClose, editing, reload }: Props
           ))}
         </FormGroup>
 
-        {/* Если режим редактирования — показываем статус / апрув */}
+        {/* Статус одобрения */}
         {editing && (
           <>
             <Typography sx={{ mt: 2 }}>
-              Статус: <b>{editing.is_approved ? "✔ ОДОБРЕН" : "⏳ НЕ ОДОБРЕН"}</b>
+              Статус:{" "}
+              <b>{editing.is_approved ? "✔ ОДОБРЕН" : "⏳ НЕ ОДОБРЕН"}</b>
             </Typography>
 
             {!editing.is_approved && (

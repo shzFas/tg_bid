@@ -1,33 +1,37 @@
-import axios from "axios";
+import { Specialist } from "../types";
+import { api } from "./axios";
 
-const API_URL = "http://localhost:5000/api/specialists";
-
-export async function getAllSpecialists() {
-  const res = await axios.get(`${API_URL}`);
-  return res.data;
+export async function getAllSpecialists(): Promise<Specialist[]> {
+  return api.get("/specialists");
 }
 
-export async function getSpecialist(id: number) {
-  const res = await axios.get(`${API_URL}/${id}`);
-  return res.data;
+export async function getSpecialist(id: number): Promise<Specialist> {
+  return api.get(`/specialists/${id}`);
 }
 
-export async function createSpecialist(data: any) {
-  const res = await axios.post(`${API_URL}`, data);
-  return res.data;
+export async function createSpecialist(
+  data: Partial<Specialist>
+): Promise<Specialist> {
+  return api.post("/specialists", data);
 }
 
-export async function updateSpecialist(id: number, data: any) {
-  const res = await axios.put(`${API_URL}/${id}`, data);
-  return res.data;
+export async function updateSpecialist(
+  id: number,
+  data: Partial<Specialist>
+): Promise<Specialist> {
+  return api.put(`/specialists/${id}`, data);
 }
 
-export async function deleteSpecialist(id: number) {
-  const res = await axios.delete(`${API_URL}/${id}`);
-  return res.data;
+export async function deleteSpecialist(
+  id: number
+): Promise<{ id: number }> {
+  return api.delete(`/specialists/${id}`);
 }
 
-export async function approveSpecialist(id: number) {
-  const res = await axios.post(`${API_URL}/${id}/approve`, { is_approved: true });
-  return res.data;
+export async function approveSpecialist(
+  id: number
+): Promise<{ approved: true }> {
+  return api.post(`/specialists/${id}/approve`, {
+    is_approved: true,
+  });
 }

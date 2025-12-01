@@ -1,20 +1,32 @@
-// src/components/specialists/SpecialistsList.tsx
 import { useEffect, useState } from "react";
 import { getAllSpecialists } from "../api/specialists";
 import { Box, Button, Typography } from "@mui/material";
 import SpecialistsTable from "./SpecialistsTable";
 import SpecialistForm from "./SpecialistForm";
+import { Specialist } from "../types";
+import { useSnackbar } from "../components/SnackbarProvider";
 
 export default function SpecialistsList() {
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [data, setData] = useState<any[]>([]);   // <--- как ты предложил
+  const [editing, setEditing] = useState<Specialist | null>(null);
+  const [data, setData] = useState<Specialist[]>([]);
+  const { showMessage } = useSnackbar();
+
+  async function refreshData() {
+    try {
+      const res = await getAllSpecialists();
+      if (Array.isArray(res)) {
+        setData(res);
+      } else {
+        setData([]);
+      }
+    } catch (err: any) {
+      showMessage(err.message, "error");
+    }
+  }
 
   useEffect(() => {
-    getAllSpecialists().then((res) => {
-      if (Array.isArray(res)) setData(res); // защита
-      else setData([]);
-    });
+    refreshData();
   }, []);
 
   return (
@@ -36,9 +48,12 @@ export default function SpecialistsList() {
 
       {/* Таблица */}
       <SpecialistsTable
-        specialists={data}    // <--- передаем сюда!
-        refresh={() => getAllSpecialists().then(setData)} // обновляем
-        onEdit={(s: any) => { setEditing(s); setOpen(true); }}
+        specialists={data}
+        refresh={refreshData}
+        onEdit={(s: Specialist) => {
+          setEditing(s);
+          setOpen(true);
+        }}
       />
 
       {/* Диалог */}
@@ -46,7 +61,7 @@ export default function SpecialistsList() {
         open={open}
         onClose={() => setOpen(false)}
         editing={editing}
-        reload={() => getAllSpecialists().then(setData)} // перезагрузка
+        reload={refreshData}
       />
     </Box>
   );

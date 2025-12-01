@@ -1,14 +1,17 @@
 import { Box } from "@mui/material";
 import AppRouter from "./router";
 import Sidebar from "./components/Sidebar";
+import { SnackbarProvider } from "./components/SnackbarProvider";
 
 export default function App() {
   return (
-    <Box sx={{ display: "flex" }}>
-      <Sidebar />
-      <Box sx={{ flexGrow: 1, p: 2 }}>
-        <AppRouter />
+    <SnackbarProvider>
+      <Box sx={{ display: "flex" }}>
+        <Sidebar />
+        <Box sx={{ flexGrow: 1, p: 2 }}>
+          <AppRouter />
+        </Box>
       </Box>
-    </Box>
+    </SnackbarProvider>
   );
 }
