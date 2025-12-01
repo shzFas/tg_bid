@@ -28,6 +28,6 @@ export async function deleteSpecialist(id: number) {
 }
 
 export async function approveSpecialist(id: number) {
-  const res = await axios.put(`${API_URL}/${id}/approve`, { is_approved: true });
+  const res = await axios.post(`${API_URL}/${id}/approve`, { is_approved: true });
   return res.data;
 }
