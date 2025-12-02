@@ -187,7 +187,6 @@ async def select_category(call: CallbackQuery, state: FSMContext):
 async def final_send(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
 
-    # сначала чистим чат
     await cleanup_chat(state, call.message)
 
     req_id = await save_request(data)
@@ -205,10 +204,20 @@ async def final_send(call: CallbackQuery, state: FSMContext):
 
     await save_message_id(req_id, msg.message_id, channel_id)
 
-    # одно финальное сообщение пользователю
     await call.message.answer(
         "✔ Ваша заявка отправлена! Скоро с вами свяжутся.",
         reply_markup=ReplyKeyboardRemove()
+    )
+
+    await call.message.answer(
+        f"📄 <b>Ваша заявка создана (ID: {req_id})</b>\n\n"
+        f"📞 Телефон: {data['phone']}\n"
+        f"👤 Имя: {data['name']}\n"
+        f"🏙 Город: {data['city']}\n"
+        f"📝 Описание: {data['desc']}\n"
+        f"📌 Категория: {data['category']}\n\n"
+        "Мы уже отправили её специалистам. Ожидайте ответа.",
+        parse_mode="HTML"
     )
 
     await state.clear()
